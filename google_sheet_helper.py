@@ -1,29 +1,37 @@
-import json
 import os
+import json
+import codecs
 import gspread
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 
-# 取得環境變數內的 JSON 金鑰字串
-SERVICE_JSON = os.getenv("GOOGLE_SERVICE_JSON")
+# === Google Sheet 設定 ===
+SPREADSHEET_ID = "1iYnuIVKSvqk-OkyhPtiZJnKmg4WGMFKtL4yd_mco1kM"  # 你的 Google Sheet ID
+WORKSHEET_NAME = "Form_Responses1"  # 實際工作表名稱（不是 sheet1）
+
+# === 從 Railway 環境變數中讀取金鑰（經過 escape） ===
+SERVICE_JSON_ESCAPED = os.getenv("GOOGLE_SERVICE_JSON")
 
 def get_sheet():
-    print("[DEBUG] GOOGLE_SERVICE_JSON:", SERVICE_JSON[:100])  # 只印前 100 字元避免洩漏
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    info = json.loads(SERVICE_JSON)
+    # 將 escape 字串轉回正常 JSON 結構
+    info = json.loads(codecs.decode(SERVICE_JSON_ESCAPED, 'unicode_escape'))
+
+    # 建立 Google 認證並取得工作表
     creds = Credentials.from_service_account_info(info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sheet = gc.open_by_key("1iYnuIVKSvqk-OkyhPtiZJnKmg4WGMFKtL4yd_mco1kM")  # 你的 Sheet ID
-    worksheet = sheet.sheet1  # 預設第一個工作表
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SPREADSHEET_ID)
+    worksheet = sheet.worksheet(WORKSHEET_NAME)
     return worksheet
 
+# === 寫入授權資料到指定用戶行 ===
 def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
     try:
-        print(f"[DEBUG] 尋找寫入 Discord ID: {discord_id} | {start_date} ~ {end_date}")
         ws = get_sheet()
         values = ws.get_all_values()
 
-        for idx, row in enumerate(values[1:], start=2):  # 🟢 從第2列開始, row編號從2起
+        # 跳過表頭，從第2列開始找
+        for idx, row in enumerate(values[1:], start=2):
             if len(row) > 1 and row[1].strip() == str(discord_id):
                 ws.update_cell(idx, 7, start_date.strftime("%Y-%m-%d"))  # G欄
                 ws.update_cell(idx, 8, end_date.strftime("%Y-%m-%d"))    # H欄
@@ -35,5 +43,3 @@ def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
     except Exception as e:
         print(f"❌ 寫入 Google Sheet 時發生錯誤：{e}")
         return False
-
-
