@@ -17,11 +17,21 @@ def get_sheet():
     return worksheet
 
 def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
-    ws = get_sheet()
-    values = ws.get_all_values()
-    for idx, row in enumerate(values):
-        if len(row) > 1 and row[1].strip() == str(discord_id):  # B欄 = Discord ID
-            ws.update_cell(idx + 1, 7, start_date.strftime("%Y-%m-%d"))  # G欄 = 第7欄
-            ws.update_cell(idx + 1, 8, end_date.strftime("%Y-%m-%d"))    # H欄 = 第8欄
-            return True
-    return False
+    try:
+        ws = get_sheet()
+        values = ws.get_all_values()
+
+        for idx, row in enumerate(values[1:], start=2):  # 🟢 從第2列開始, row編號從2起
+            if len(row) > 1 and row[1].strip() == str(discord_id):
+                ws.update_cell(idx, 7, start_date.strftime("%Y-%m-%d"))  # G欄
+                ws.update_cell(idx, 8, end_date.strftime("%Y-%m-%d"))    # H欄
+                print(f"✅ 寫入成功，第{idx}列 Discord ID: {discord_id}")
+                return True
+
+        print(f"❌ 找不到 Discord ID: {discord_id} 在 Google Sheet 中")
+        return False
+    except Exception as e:
+        print(f"❌ 寫入 Google Sheet 時發生錯誤：{e}")
+        return False
+print(f"[DEBUG] 尋找寫入 Discord ID: {discord_id} | {start_date} ~ {end_date}")
+
