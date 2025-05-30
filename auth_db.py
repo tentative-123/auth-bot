@@ -1,8 +1,36 @@
 import sqlite3
 from datetime import datetime, timedelta
 from google_sheet_helper import get_auth_dates_from_sheet
+import json
+import os
 
 DB_FILE = "auth.db"
+AUTH_JSON = "auth.json"
+
+
+def load_auth_data():
+    try:
+        if os.path.exists(AUTH_JSON):
+            with open(AUTH_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                print(f"[DEBUG] 成功讀取 auth.json：{len(data)} 筆")
+                return data
+        else:
+            print("[DEBUG] 找不到 auth.json，回傳空 dict")
+            return {}
+    except Exception as e:
+        print(f"❌ 讀取 auth.json 發生錯誤：{e}")
+        return {}
+
+
+def save_auth_data(data):
+    try:
+        with open(AUTH_JSON, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"[DEBUG] 成功儲存 auth.json，共 {len(data)} 筆")
+    except Exception as e:
+        print(f"❌ 寫入 auth.json 發生錯誤：{e}")
+
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
