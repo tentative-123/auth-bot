@@ -18,11 +18,17 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def auth(ctx, member: discord.Member, days: int = 30):
     start, end = add_user_subscription(member.id, days)
     role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
+    print(f"找到身分組：{role}")  # ← debug log
+
     if role:
         await member.add_roles(role)
         await ctx.send(f"✅ {member.mention} 授權成功！有效期 {start} ～ {end}")
     else:
         await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
+    print(f"[DEBUG] Member: {member}, ID: {member.id}")
+    print(f"[DEBUG] Found Role: {role}, ID: {role.id if role else 'None'}")
+    print(f"[DEBUG] Member Roles Before: {[r.name for r in member.roles]}")
+
 
 @bot.command()
 @commands.has_permissions(administrator=True)
