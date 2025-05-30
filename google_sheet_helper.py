@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 
 # === Google Sheet 設定 ===
 SPREADSHEET_ID = "1iYnuIVKSvqk-OkyhPtiZJnKmg4WGMFKtL4yd_mco1kM"  # 你的 Google Sheet ID
-WORKSHEET_NAME = "Form_Responses1"  # 實際工作表名稱（不是 sheet1）
+WORKSHEET_NAME = "001"  # 實際工作表名稱（不是 sheet1）
 
 # === 從 Railway 環境變數中讀取金鑰（經過 escape） ===
 SERVICE_JSON_ESCAPED = os.getenv("GOOGLE_SERVICE_JSON")
