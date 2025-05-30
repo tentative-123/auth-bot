@@ -17,8 +17,8 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def auth(ctx, member: discord.Member, days: int = 30):
-    update_auth_date(member.id, start, end)
-    start, end = add_user_subscription(member.id, days)
+    start, end = add_user_subscription(member.id, days)  # ✅ 先產生日期
+    update_auth_date(member.id, start, end) # ✅ 再寫入 Google Sheet
     role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
     print(f"找到身分組：{role}")  # ← debug log
 
