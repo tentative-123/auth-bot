@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime, timedelta
+from google_sheet_helper import get_auth_dates_from_sheet
 
 DB_FILE = "auth.db"
 
@@ -45,18 +46,18 @@ def add_user_subscription_new(user_id, days=30):
     conn.close()
     return today, end
 
-def check_user_subscription(user_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('SELECT start_date, end_date FROM subscriptions WHERE user_id = ?', (str(user_id),))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        start = datetime.strptime(row[0], '%Y-%m-%d').date()
-        end = datetime.strptime(row[1], '%Y-%m-%d').date()
-        valid = datetime.today().date() <= end
-        return valid, start, end
-    return False, None, None
+def check_user_subscription(discord_id: int):
+    # 1. 查 SQLite
+    data = load_auth_data()
+    record = data.get(str(discord_id))
+    if record:
+        start = datetime.strptime(record["start"], "%Y-%m-%d").date()
+        end = datetime.strptime(record["end"], "%Y-%m-%d").date()
+        return datetime.today().date() <= end, start, end
+
+    # 2. Fallback to Google Sheet
+    valid, start, end = get_auth_dates_from_sheet(discord_id)
+    return valid, start, end
 
 def get_all_subscriptions():
     conn = sqlite3.connect(DB_FILE)
