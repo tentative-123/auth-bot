@@ -17,32 +17,31 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def auth(ctx, member: discord.Member, days: int = 30):
-    # 1. 授權資料產生（SQLite）
     start, end = add_user_subscription(member.id, days)
 
-    # 2. 更新 Google Sheet
+    # 🧠 非同步安全方式呼叫 Google Sheet 寫入
+    loop = asyncio.get_event_loop()
     try:
-        success = update_auth_date(str(member.id), start, end)
+        success = await loop.run_in_executor(None, update_auth_date, str(member.id), start, end)
         if success:
-            print(f"✅ 已寫入 Google Sheet：{member.id} → {start} ~ {end}")
+            print(f"✅ Google Sheet 更新成功 {member.id} → {start} ~ {end}")
         else:
-            print(f"❌ Google Sheet 找不到 Discord ID：{member.id}")
+            print(f"❌ Google Sheet 找不到 ID：{member.id}")
     except Exception as e:
         print(f"❌ 寫入 Google Sheet 發生錯誤：{e}")
 
-    # 3. 加入 Discord 身分組
+    # ✅ 加身分組
     role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
     if role:
         try:
             await member.add_roles(role)
             await ctx.send(f"✅ {member.mention} 授權成功！有效期 {start} ～ {end}")
         except discord.Forbidden:
-            await ctx.send("❌ 機器人沒有足夠權限加上身分組，請檢查角色順序與權限")
+            await ctx.send("❌ 無法給身分組，請檢查機器人角色順序與權限")
     else:
         await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
 
-    print(f"[DEBUG] Member: {member}, ID: {member.id}")
-    print(f"[DEBUG] Role Found: {role}")
+    print(f"[DEBUG] 給予角色與同步完成：{member.name} ID: {member.id}")
 
 
 @bot.command()
