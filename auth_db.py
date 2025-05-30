@@ -17,22 +17,24 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_user_subscription(user_id, days=30):
+def add_user_subscription(discord_id: int, days=30):
     today = datetime.today().date()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('SELECT end_date FROM subscriptions WHERE user_id = ?', (str(user_id),))
-    row = c.fetchone()
-    if row:
-        old_end = datetime.strptime(row[0], '%Y-%m-%d').date()
+    data = load_auth_data()
+
+    if str(discord_id) in data:
+        old_end = datetime.strptime(data[str(discord_id)]["end"], "%Y-%m-%d").date()
         base = max(today, old_end)
     else:
-        base = today
+        # 若 SQLite 沒資料 → 查 Google Sheet fallback
+        valid, start, end = get_auth_dates_from_sheet(discord_id)
+        base = max(today, end) if valid else today
+
     new_end = base + timedelta(days=days)
-    c.execute('REPLACE INTO subscriptions (user_id, start_date, end_date) VALUES (?, ?, ?)',
-              (str(user_id), str(today), str(new_end)))
-    conn.commit()
-    conn.close()
+    data[str(discord_id)] = {
+        "start": str(today),
+        "end": str(new_end)
+    }
+    save_auth_data(data)
     return today, new_end
 
 def add_user_subscription_new(user_id, days=30):
