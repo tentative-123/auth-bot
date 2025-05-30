@@ -49,17 +49,23 @@ def add_user_subscription_new(user_id, days=30):
     return today, end
 
 def check_user_subscription(discord_id: int):
+    print(f"[DEBUG] check_user_subscription: 查詢 {discord_id}...")
+
     # 1. 查 SQLite
     data = load_auth_data()
     record = data.get(str(discord_id))
     if record:
         start = datetime.strptime(record["start"], "%Y-%m-%d").date()
         end = datetime.strptime(record["end"], "%Y-%m-%d").date()
+        print(f"[DEBUG] 找到本地授權：{start} ～ {end}")
         return datetime.today().date() <= end, start, end
 
+    print("[DEBUG] 本地查無資料，改查 Google Sheet...")
     # 2. Fallback to Google Sheet
     valid, start, end = get_auth_dates_from_sheet(discord_id)
+    print(f"[DEBUG] Sheet 回傳：valid={valid}, start={start}, end={end}")
     return valid, start, end
+
 
 def get_all_subscriptions():
     conn = sqlite3.connect(DB_FILE)
