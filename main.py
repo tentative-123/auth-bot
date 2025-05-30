@@ -48,8 +48,18 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
-async def on_ready():
+async def authok():
     print(f"✅ 授權機器人已啟動：{bot.user}")
+    
+    # 啟動每日排程任務
+    async def daily_check():
+        await bot.wait_until_ready()
+        while not bot.is_closed():
+            for guild in bot.guilds:
+                await check_and_update_subscriptions(guild)
+            await asyncio.sleep(86400)  # 每 24 小時執行一次
+
+    bot.loop.create_task(daily_check())
 
 # !auth @user 30
 @bot.command()
@@ -64,7 +74,7 @@ async def auth(ctx, member: discord.Member, days: int = 30):
         await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
 
 # !checkauth @user
-@bot.command()
+@commands.has_permissions(administrator=True)
 async def checkauth(ctx, member: discord.Member):
     valid, start, end = check_user_subscription(member.id)
     if not start:
@@ -73,6 +83,47 @@ async def checkauth(ctx, member: discord.Member):
         await ctx.send(f"🟢 {member.mention} 有效，授權期間：{start} ～ {end}")
     else:
         await ctx.send(f"🔴 {member.mention} 已過期，授權期間：{start} ～ {end}")
+
+async def check_and_update_subscriptions(guild: discord.Guild):
+    """每日執行：檢查所有訂閱用戶，移除過期者、提醒即將到期者"""
+    data = load_auth_data()
+    today = datetime.today().date()
+
+    for user_id, record in data.items():
+        try:
+            member = guild.get_member(int(user_id))
+            if not member:
+                continue
+
+            start = datetime.strptime(record["start"], "%Y-%m-%d").date()
+            end = datetime.strptime(record["end"], "%Y-%m-%d").date()
+            days_left = (end - today).days
+
+            role_sub = discord.utils.get(guild.roles, name="已訂閱")
+            role_guest = discord.utils.get(guild.roles, name="遊客")
+
+            # 到期 → 移除已訂閱，改給遊客
+            if today > end:
+                if role_sub in member.roles:
+                    await member.remove_roles(role_sub)
+                if role_guest and role_guest not in member.roles:
+                    await member.add_roles(role_guest)
+                print(f"🔁 已移除 {member} 訂閱身分，轉為遊客")
+                continue
+
+            # 提前提醒（剩下 5 天）
+            if 0 < days_left <= 5:
+                try:
+                    await member.send(
+                        f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，"
+                        f"如要續訂請填寫表單並通知管理員哦！"
+                    )
+                    print(f"📨 已提醒 {member} 訂閱即將到期")
+                except discord.Forbidden:
+                    print(f"❌ 無法私訊 {member}，可能關閉私訊")
+        except Exception as e:
+            print(f"❌ 錯誤處理用戶 {user_id}：{e}")
+
 
 # 啟動 bot
 if __name__ == '__main__':
