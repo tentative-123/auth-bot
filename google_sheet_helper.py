@@ -43,3 +43,21 @@ def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
     except Exception as e:
         print(f"❌ 寫入 Google Sheet 時發生錯誤：{e}")
         return False
+
+def get_auth_dates_from_sheet(discord_id: str):
+    try:
+        ws = get_sheet()
+        values = ws.get_all_values()
+
+        for row in values[1:]:
+            if len(row) > 1 and row[1].strip() == str(discord_id):
+                start_str = row[6] if len(row) >= 7 else ""
+                end_str = row[7] if len(row) >= 8 else ""
+                if start_str and end_str:
+                    start = datetime.strptime(start_str.strip(), "%Y-%m-%d").date()
+                    end = datetime.strptime(end_str.strip(), "%Y-%m-%d").date()
+                    return True, start, end
+        return False, None, None
+    except Exception as e:
+        print(f"❌ 從 Google Sheet 查詢授權日期失敗：{e}")
+        return False, None, None
