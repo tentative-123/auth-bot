@@ -4,6 +4,7 @@ from discord.ext import commands
 import asyncio
 from datetime import datetime, timedelta
 from auth_db import init_db, add_user_subscription, check_user_subscription, get_all_subscriptions
+from google_sheet_helper import update_auth_date
 
 TOKEN = os.getenv("AUTH_BOT_TOKEN")
 ROLE_NAME = "已訂閱"
@@ -16,6 +17,7 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def auth(ctx, member: discord.Member, days: int = 30):
+    update_auth_date(member.id, start, end)
     start, end = add_user_subscription(member.id, days)
     role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
     print(f"找到身分組：{role}")  # ← debug log
