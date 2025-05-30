@@ -47,10 +47,14 @@ async def auth(ctx, member: discord.Member, days: int = 30):
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def authnew(ctx, member: discord.Member, days: int = 30):
+    from auth_db import load_auth_data, save_auth_data
+    from google_sheet_helper import update_auth_date
+    import sqlite3
+
     today = datetime.today().date()
     end = today + timedelta(days=days)
 
-    # 儲存至 SQLite
+    # --- 更新 SQLite ---
     conn = sqlite3.connect("auth.db")
     c = conn.cursor()
     c.execute('REPLACE INTO subscriptions (user_id, start_date, end_date) VALUES (?, ?, ?)',
@@ -58,8 +62,7 @@ async def authnew(ctx, member: discord.Member, days: int = 30):
     conn.commit()
     conn.close()
 
-    # 同步寫入快取檔 auth.json
-    from auth_db import load_auth_data, save_auth_data
+    # --- 更新本地 auth.json 快取 ---
     data = load_auth_data()
     data[str(member.id)] = {
         "start": str(today),
@@ -67,17 +70,19 @@ async def authnew(ctx, member: discord.Member, days: int = 30):
     }
     save_auth_data(data)
 
-    # 更新 Google Sheet
-    from google_sheet_helper import update_auth_date
+    # --- 更新 Google Sheet ---
+    print(f"[DEBUG] 強制寫入 Google Sheet：{member.id} | {today} ~ {end}")
     update_auth_date(str(member.id), today, end)
 
-    # 加角色
+    # --- 加上 Discord 角色 ---
     role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
     if role:
         await member.add_roles(role)
         await ctx.send(f"✅ {member.mention} 授權成功！（覆蓋）有效期 {today} ～ {end}")
     else:
         await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
+
+    print(f"[DEBUG] authnew 完成：{member.display_name} ID: {member.id}")
 
 
 
