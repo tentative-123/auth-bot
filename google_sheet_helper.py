@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 SERVICE_JSON = os.getenv("GOOGLE_SERVICE_JSON")
 
 def get_sheet():
+    print("[DEBUG] GOOGLE_SERVICE_JSON:", SERVICE_JSON[:100])  # 只印前 100 字元避免洩漏
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     info = json.loads(SERVICE_JSON)
     creds = Credentials.from_service_account_info(info, scopes=scopes)
