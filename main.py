@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 import json
 from datetime import datetime, timedelta
+from auth_db import init_db, add_user_subscription, check_user_subscription, get_all_subscriptions
 
 TOKEN = os.getenv("AUTH_BOT_TOKEN")
 AUTH_FILE = "subs.json"
@@ -49,6 +50,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def authok():
+    init_db()
     print(f"✅ 授權機器人已啟動：{bot.user}")
     
     # 啟動每日排程任務
@@ -86,23 +88,22 @@ async def checkauth(ctx, member: discord.Member):
 
 async def check_and_update_subscriptions(guild: discord.Guild):
     """每日執行：檢查所有訂閱用戶，移除過期者、提醒即將到期者"""
-    data = load_auth_data()
     today = datetime.today().date()
+    all_subs = get_all_subscriptions()
 
-    for user_id, record in data.items():
+    for user_id, start_str, end_str in all_subs:
         try:
             member = guild.get_member(int(user_id))
             if not member:
                 continue
 
-            start = datetime.strptime(record["start"], "%Y-%m-%d").date()
-            end = datetime.strptime(record["end"], "%Y-%m-%d").date()
+            start = datetime.strptime(start_str, "%Y-%m-%d").date()
+            end = datetime.strptime(end_str, "%Y-%m-%d").date()
             days_left = (end - today).days
 
             role_sub = discord.utils.get(guild.roles, name="已訂閱")
             role_guest = discord.utils.get(guild.roles, name="遊客")
 
-            # 到期 → 移除已訂閱，改給遊客
             if today > end:
                 if role_sub in member.roles:
                     await member.remove_roles(role_sub)
@@ -111,16 +112,14 @@ async def check_and_update_subscriptions(guild: discord.Guild):
                 print(f"🔁 已移除 {member} 訂閱身分，轉為遊客")
                 continue
 
-            # 提前提醒（剩下 5 天）
             if 0 < days_left <= 5:
                 try:
                     await member.send(
-                        f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，"
-                        f"如要續訂請填寫表單並通知管理員哦！"
+                        f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，如要續訂請填寫表單並通知管理員哦！"
                     )
                     print(f"📨 已提醒 {member} 訂閱即將到期")
                 except discord.Forbidden:
-                    print(f"❌ 無法私訊 {member}，可能關閉私訊")
+                    print(f"❌ 無法私訊 {member}")
         except Exception as e:
             print(f"❌ 錯誤處理用戶 {user_id}：{e}")
 
