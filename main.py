@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 TOKEN = os.getenv("AUTH_BOT_TOKEN")
 AUTH_FILE = "subs.json"
-ROLE_NAME = "premium_user"
+ROLE_NAME = "已訂閱"  # 改成你的身份組名稱
 
 # === 授權資料操作 ===
 def load_auth_data():
@@ -61,7 +61,7 @@ async def auth(ctx, member: discord.Member, days: int = 30):
         await member.add_roles(role)
         await ctx.send(f"✅ {member.mention} 授權成功！有效期 {start} ～ {end}")
     else:
-        await ctx.send(f"⚠️ 未找到 {ROLE_NAME} 身分組，請先建立該角色")
+        await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
 
 # !checkauth @user
 @bot.command()
