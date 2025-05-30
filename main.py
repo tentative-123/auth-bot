@@ -13,36 +13,6 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="-", intents=intents)
 
-def add_user_subscription(user_id, days=30):
-    data = load_auth_data()
-    today = datetime.today().date()
-
-    if str(user_id) in data:
-        old_end = datetime.strptime(data[str(user_id)]["end"], "%Y-%m-%d").date()
-        base_date = max(today, old_end)
-    else:
-        base_date = today
-
-    new_end = base_date + timedelta(days=days)
-
-    data[str(user_id)] = {
-        "start": str(today),
-        "end": str(new_end)
-    }
-    save_auth_data(data)
-    return today, new_end
-
-def add_user_subscription_new(user_id, days=30):
-    data = load_auth_data()
-    today = datetime.today().date()
-    end_date = today + timedelta(days=days)
-    data[str(user_id)] = {
-        "start": str(today),
-        "end": str(end_date)
-    }
-    save_auth_data(data)
-    return today, end_date
-
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def auth(ctx, member: discord.Member, days: int = 30):
