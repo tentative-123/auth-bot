@@ -18,6 +18,7 @@ def get_sheet():
 
 def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
     try:
+        print(f"[DEBUG] 尋找寫入 Discord ID: {discord_id} | {start_date} ~ {end_date}")
         ws = get_sheet()
         values = ws.get_all_values()
 
@@ -33,5 +34,5 @@ def update_auth_date(discord_id: str, start_date: datetime, end_date: datetime):
     except Exception as e:
         print(f"❌ 寫入 Google Sheet 時發生錯誤：{e}")
         return False
-print(f"[DEBUG] 尋找寫入 Discord ID: {discord_id} | {start_date} ~ {end_date}")
+
 
