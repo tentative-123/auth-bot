@@ -128,6 +128,12 @@ async def check_and_update_subscriptions(guild: discord.Guild):
                         f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，如要續訂請填寫表單並通知管理員哦！"
                     )
                     print(f"📨 已提醒 {member} 訂閱即將到期")
+                    # 發送同步提醒到私人頻道
+                private_channel = guild.get_channel(1377957354397761536)
+                if private_channel:
+                    await private_channel.send(
+                        f"📋 用戶 {member.display_name}（ID: {member.id}）的訂閱將在 {days_left} 天後（{end}）到期。"
+                    )
                 except discord.Forbidden:
                     print(f"❌ 無法私訊 {member}")
         except Exception as e:
