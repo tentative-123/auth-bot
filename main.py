@@ -105,6 +105,7 @@ async def check_and_update_subscriptions(guild: discord.Guild):
         try:
             member = guild.get_member(int(user_id))
             if not member:
+                print(f"⚠️ 找不到用戶 ID: {user_id}")
                 continue
 
             start = datetime.strptime(start_str, "%Y-%m-%d").date()
@@ -114,35 +115,45 @@ async def check_and_update_subscriptions(guild: discord.Guild):
             role_sub = discord.utils.get(guild.roles, name="已訂閱")
             role_guest = discord.utils.get(guild.roles, name="遊客")
 
+            # 授權已過期：移除訂閱身分，轉為遊客
             if today > end:
-                if role_sub in member.roles:
+                if role_sub and role_sub in member.roles:
                     await member.remove_roles(role_sub)
+                    print(f"🔁 已移除 {member} 的訂閱身分")
+
                 if role_guest and role_guest not in member.roles:
                     await member.add_roles(role_guest)
-                print(f"🔁 已移除 {member} 訂閱身分，轉為遊客")
+                    print(f"🟡 已轉為遊客 {member}")
+
                 continue
 
+            # 即將到期：5天內提醒
             if 0 < days_left <= 5:
+                # 私訊提醒
                 try:
                     await member.send(
                         f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，如要續訂請填寫表單並通知管理員哦！"
                     )
                     print(f"📨 已提醒 {member} 訂閱即將到期")
                 except discord.Forbidden:
-                    print(f"❌ 無法私訊 {member}")
-                # 發送同步提醒到私人頻道
+                    print(f"❌ 無法私訊 {member.display_name}，可能關閉私訊")
+
+                # 私人頻道同步提醒
                 try:
                     private_channel = guild.get_channel(1377957354397761536)
                     if private_channel:
                         await private_channel.send(
                             f"📋 用戶 {member.display_name}（ID: {member.id}）的訂閱將在 {days_left} 天後（{end}）到期。"
                         )
+                        print(f"📤 已同步發送私人提醒：{member.display_name}")
                     else:
-                        print("❌ 找不到私人頻道")
+                        print("❌ 找不到私人頻道 ID: 1377957354397761536")
                 except Exception as e:
-                    print(f"❌ 發送至私人頻道時發生錯誤：{e}")
+                    print(f"❌ 發送私人頻道提醒失敗：{e}")
+
         except Exception as e:
-            print(f"❌ 錯誤處理用戶 {user_id}：{e}")
+            print(f"❌ 處理用戶 {user_id} 時發生錯誤：{e}")
+
 
 async def init_tasks():
     await bot.wait_until_ready()
