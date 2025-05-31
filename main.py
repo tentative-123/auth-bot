@@ -154,6 +154,52 @@ async def check_and_update_subscriptions(guild: discord.Guild):
         except Exception as e:
             print(f"❌ 處理用戶 {user_id} 時發生錯誤：{e}")
 
+#-------------------------------------------------------------------------------------------------
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def authall(ctx):
+    from google_sheet_helper import get_sheet
+    try:
+        ws = get_sheet()
+        values = ws.get_all_values()[1:]  # 跳過表頭
+
+        total = 0
+        near_expiry = []
+        today = datetime.today().date()
+
+        for row in values:
+            if len(row) >= 8:
+                user_id = row[1].strip()
+                start_str = row[6].strip()
+                end_str = row[7].strip()
+
+                try:
+                    start = datetime.strptime(start_str, "%Y-%m-%d").date()
+                    end = datetime.strptime(end_str, "%Y-%m-%d").date()
+                    total += 1
+                    days_left = (end - today).days
+                    if 0 < days_left <= 5:
+                        near_expiry.append((user_id, days_left))
+                except Exception as e:
+                    print(f"⚠️ 無法解析日期：{user_id} | {start_str} ~ {end_str}")
+
+        near_expiry.sort(key=lambda x: x[1])
+
+        msg = f"📊 總訂閱用戶數：{total} 位\n"
+        if near_expiry:
+            msg += "⏰ 近 5 天即將過期的用戶 ID：\n"
+            for uid, d in near_expiry:
+                msg += f"- ID: `{uid}`（剩 {d} 天）\n"
+        else:
+            msg += "✅ 目前沒有用戶即將過期！"
+
+        await ctx.send(msg)
+
+    except Exception as e:
+        await ctx.send(f"❌ 無法讀取 Google Sheet：{e}")
+
+#----------------------------------------------------------------------------------------------------------------
+
 
 async def init_tasks():
     await bot.wait_until_ready()
