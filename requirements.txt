@@ -1,4 +1,7 @@
-discord.py==2.3.2
-gspread
-google-auth
-
+discord.py
+openai
+python-dotenv
+yfinance
+pandas
+matplotlib
+numpy
