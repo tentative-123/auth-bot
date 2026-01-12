@@ -118,7 +118,7 @@ async def health_check(ctx, *, user_input: str = None):
         response = await openai_client.chat.completions.create(
             model="gpt-4-turbo-preview",
             response_format={"type": "json_object"}, 
-            max_tokens=2000, # 限制最大 Token 數，防止 27k 字的鬼打牆
+            max_tokens=500, # 限制最大 Token 數，防止 27k 字的鬼打牆
             messages=[
                 {
                     "role": "system", 
