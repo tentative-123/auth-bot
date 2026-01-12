@@ -4,28 +4,24 @@ from discord.ui import Button, View
 import openai
 import os
 import json
-import analysis  # 確保與 analysis.py 在同一目錄
+import analysis 
 
-# --- 讀取環境變數 ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# 初始化 OpenAI 客戶端
 if OPENAI_API_KEY:
     openai_client = openai.Client(api_key=OPENAI_API_KEY)
 else:
-    print("⚠️ 警告: 未檢測到 OPENAI_API_KEY")
     openai_client = None
 
-# --- 初始化 Discord Bot (指令前綴改為 $) ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
-# --- 定義互動按鈕 (Stage 2) ---
+# --- Stage 2: 確認按鈕 ---
 class ConfirmView(View):
     def __init__(self, original_author, asset_data, user_input_raw):
-        super().__init__(timeout=180) # 3分鐘超時
+        super().__init__(timeout=180)
         self.original_author = original_author
         self.asset_data = asset_data
         self.user_input_raw = user_input_raw
@@ -36,54 +32,37 @@ class ConfirmView(View):
             return False
         return True
 
-    @discord.ui.button(label="✅ 確認正確，開始分析", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="✅ 確認正確", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: Button):
-        # 1. 回應並鎖定按鈕
-        await interaction.response.send_message("🔍 收到！正在調取市場數據、計算波動率並生成 AI 毒舌報告，請稍候約 15 秒...", ephemeral=False)
+        await interaction.response.send_message("🔍 數據標準化完成。正在調取市場數據並進行風險運算...", ephemeral=False)
         self.stop()
         await interaction.message.edit(view=None)
 
         try:
-            # 2. 提取風險偏好關鍵字
             user_risk_pref = "未知"
             raw_text = self.user_input_raw
-            if "保守" in raw_text or "低風險" in raw_text: user_risk_pref = "保守 (Conservative)"
-            elif "激進" in raw_text or "高風險" in raw_text: user_risk_pref = "激進 (Aggressive)"
-            elif "穩健" in raw_text: user_risk_pref = "穩健 (Moderate)"
+            if "保守" in raw_text or "低風險" in raw_text: user_risk_pref = "保守"
+            elif "激進" in raw_text or "高風險" in raw_text: user_risk_pref = "激進"
+            elif "穩健" in raw_text: user_risk_pref = "穩健"
 
             assets = self.asset_data['assets']
-
-            # 3. 執行 Python 分析 (Stage 3 - Risk Calculation)
-            # 這一步會呼叫 analysis.py 去抓 Yahoo Finance
             metrics, total_score = analysis.fetch_market_data(assets)
-
-            # 4. 生成圖表 (Matplotlib)
             chart_buffer = analysis.generate_charts(assets, total_score)
             chart_file = discord.File(chart_buffer, filename="analysis.png")
-
-            # 5. 執行 AI 評價 (Stage 3 - AI Generation)
-            critique = await analysis.get_ai_critique(
-                openai_client, 
-                assets, 
-                metrics, 
-                total_score, 
-                user_risk_pref
-            )
-
-            # 6. 發送最終報告
+            
+            critique = await analysis.get_ai_critique(openai_client, assets, metrics, total_score, user_risk_pref)
             await interaction.followup.send(content=critique, file=chart_file)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ 分析過程中發生錯誤: {str(e)}")
-            print(f"Analysis Error: {e}")
+            await interaction.followup.send(f"❌ 分析錯誤: {str(e)}")
 
-    @discord.ui.button(label="❌ 修改 / 取消", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="❌ 修改", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("已取消。請重新整理您的敘述後，再次輸入 `$health`。", ephemeral=True)
+        await interaction.response.send_message("已取消。", ephemeral=True)
         self.stop()
         await interaction.message.edit(view=None)
 
-# --- 核心指令 $health (Stage 1) ---
+# --- Stage 1: 核心解析邏輯 (大幅升級) ---
 @bot.command(name="health")
 async def health_check(ctx, *, user_input: str = None):
     if not openai_client:
@@ -91,13 +70,12 @@ async def health_check(ctx, *, user_input: str = None):
         return
 
     if not user_input:
-        await ctx.send("請輸入您的配置，例如：`$health 我很保守，持有 50% VOO, 50% 現金`")
+        await ctx.send("請輸入您的配置，例如：`$health 50% VOO, 50% 現金`")
         return
 
-    msg = await ctx.send("🤖 正在讀取您的配置並進行結構化處理...")
+    msg = await ctx.send("🤖 正在進行數學運算與資產標準化...")
 
     try:
-        # 呼叫 OpenAI 進行 Stage 1 解析
         response = openai_client.chat.completions.create(
             model="gpt-4-turbo-preview",
             response_format={"type": "json_object"}, 
@@ -105,61 +83,70 @@ async def health_check(ctx, *, user_input: str = None):
                 {
                     "role": "system", 
                     "content": """
-                    你是一個資產配置 JSON 解析器。
-                    任務：將用戶輸入轉換為標準 JSON。
+                    你是一個資產配置「計算與標準化」引擎。
+                    你的目標是輸出標準的 JSON 格式：{"assets": [{"name": "Ticker", "percentage": 30.5}], "total": 100}。
                     
-                    規則：
-                    1. 將所有資產轉為 List，格式：{"name": "Ticker", "percentage": 30}
-                    2. **關鍵代碼轉換** (非常重要)：
-                       - 如果用戶說「現金」、「台幣」、「美元」、「Cash」，name 請一律填 "現金" (這將觸發特殊的零波動率處理)。
-                       - 嘗試將股票名稱轉為 Yahoo Finance 代碼：
-                         * 台積電 -> "2330.TW"
-                         * 鴻海 -> "2317.TW"
-                         * 聯發科 -> "2454.TW"
-                         * 輝達/Nvidia -> "NVDA"
-                         * 蘋果 -> "AAPL"
-                         * 特斯拉 -> "TSLA"
-                         * 標普500/大盤 -> "VOO"
-                         * 那斯達克/科技股 -> "QQQ"
-                       - 若無法確定代碼，請保留原名。
-                    3. 確保 "assets" 列表和 "total" (總百分比) 存在。
+                    ### 核心邏輯規則 (必須嚴格遵守)：
+                    1. **單位統一**：如果用戶混合使用貨幣 (1000 USD, 10000 TWD)，請以「粗略匯率」統一換算成 USD (假設 1 USD = 32 TWD) 來計算權重。
+                    2. **混合輸入運算 (最重要)**：
+                       - 如果用戶同時給了「絕對金額」和「百分比」，你必須嘗試推算總資產。
+                       - **案例**："A有 $1000 (代表某個佔比), B佔 50%"。
+                         -> 邏輯：這通常暗示 $1000 是剩下的 50%。因此總資產 = $2000。A = 50%, B = 50%。
+                       - **矛盾檢測**：如果輸入數學上無法成立 (例如："A佔 60%, B佔 60%")，或者資訊不足無法推算 (例如："A有 $1000, B有 $500, C佔 10%" -> 這裡不知道 $1500 代表多少比例)，請回傳 Error。
+                    3. **"剩下的" (The Rest)**：
+                       - 計算所有已知百分比，將剩餘的 % 分配給 "剩下的" 那個資產。
+                    4. **代碼轉換**：
+                       - 現金/Cash/TWD/USD -> name: "現金"
+                       - 0050/台灣50 -> name: "0050.TW"
+                       - 比特幣 -> name: "BTC-USD"
                     
-                    範例：
-                    Input: "一半台積電，一半放定存"
-                    Output: {"assets": [{"name": "2330.TW", "percentage": 50}, {"name": "現金", "percentage": 50}], "total": 100}
+                    ### 異常處理：
+                    如果用戶輸入模糊、數學矛盾、或無法計算百分比，請不要瞎編數據。
+                    請回傳 JSON: {"status": "error", "message": "你的錯誤原因說明"}
+                    
+                    ### 範例：
+                    User: "1000美金 VOO, 1000美金 QQQ"
+                    Output: {"assets": [{"name": "VOO", "percentage": 50}, {"name": "QQQ", "percentage": 50}], "total": 100}
+                    
+                    User: "50% VOO, 剩下的放定存"
+                    Output: {"assets": [{"name": "VOO", "percentage": 50}, {"name": "現金", "percentage": 50}], "total": 100}
+
+                    User: "1000美金 VOO, 45% 0050" (這很難算，假設 $1000 是剩下的 55%)
+                    Logic: $1000 / 0.55 = Total $1818. 0050 = $818 (45%).
+                    Output: {"assets": [{"name": "VOO", "percentage": 55}, {"name": "0050.TW", "percentage": 45}], "total": 100}
                     """
                 },
                 {"role": "user", "content": user_input}
             ]
         )
         
-        # 解析回傳結果
         data = json.loads(response.choices[0].message.content)
         
-        # 顯示確認介面 (Stage 2)
+        # --- 錯誤處理：如果 AI 認為算不出來 ---
+        if data.get("status") == "error":
+            await msg.edit(content=f"⚠️ **無法解析您的配置**\nAI 判讀訊息：{data.get('message')}\n\n💡 建議：請試著統一單位，例如全部用 `%` 表達，或全部用 `金額` 表達。")
+            return
+
+        # 正常流程
         view = ConfirmView(ctx.author, data, user_input)
         
-        display_text = "### 📋 請確認您的資產配置：\n"
+        display_text = "### 📊 資產標準化結果 (已換算為 %)\n"
         for a in data.get('assets', []):
-            display_text += f"• **{a['name']}**: `{a['percentage']}%`\n"
+            display_text += f"• **{a['name']}**: `{a['percentage']:.1f}%`\n"
         
-        if data.get('total') != 100:
-            display_text += f"\n⚠️ **注意**：目前加總為 `{data.get('total')}%` (非 100%)"
+        # 加上警告標語，如果 AI 做了大量推論
+        display_text += "\n*(若您輸入了金額，AI 已自動根據權重換算為百分比)*"
             
         await msg.edit(content=display_text, view=view)
 
     except Exception as e:
-        await msg.edit(content=f"❌ 解析失敗: {str(e)}")
-        print(f"Parsing Error: {e}")
+        await msg.edit(content=f"❌ 系統錯誤: {str(e)}")
+        print(f"Error: {e}")
 
-# --- Bot 啟動事件 ---
 @bot.event
 async def on_ready():
-    print(f"Bot is ready: {bot.user} (ID: {bot.user.id})")
-    print("-------------------------------------------------")
+    print(f"Bot is ready: {bot.user}")
 
 if __name__ == "__main__":
     if DISCORD_TOKEN:
         bot.run(DISCORD_TOKEN)
-    else:
-        print("❌ 請設定 DISCORD_TOKEN 環境變數")
