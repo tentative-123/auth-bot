@@ -1,226 +1,136 @@
-import os
 import discord
 from discord.ext import commands
-import asyncio
-from datetime import datetime, timedelta
-from auth_db import init_db, add_user_subscription, check_user_subscription, get_all_subscriptions
-from google_sheet_helper import update_auth_date
+from discord.ui import Button, View
+import openai
+import os
+import json
+# 導入新寫的分析模組
+import analysis 
 
-TOKEN = os.getenv("AUTH_BOT_TOKEN")
-ROLE_NAME = "已訂閱"
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+openai_client = openai.Client(api_key=OPENAI_API_KEY)
 intents = discord.Intents.default()
-intents.members = True
 intents.message_content = True
-bot = commands.Bot(command_prefix="-", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-@bot.command()
-@commands.has_permissions(manage_roles=True)
-async def auth(ctx, member: discord.Member, days: int = 30):
-    start, end = add_user_subscription(member.id, days)
+class ConfirmView(View):
+    def __init__(self, original_author, asset_data, user_input_raw):
+        super().__init__(timeout=180) # 延長 timeout 因為分析需要時間
+        self.original_author = original_author
+        self.asset_data = asset_data
+        self.user_input_raw = user_input_raw # 保留原始輸入看有無提到風險偏好
 
-    # 🧠 非同步安全方式呼叫 Google Sheet 寫入
-    loop = asyncio.get_event_loop()
-    try:
-        success = await loop.run_in_executor(None, update_auth_date, str(member.id), start, end)
-        if success:
-            print(f"✅ Google Sheet 更新成功 {member.id} → {start} ~ {end}")
-        else:
-            print(f"❌ Google Sheet 找不到 ID：{member.id}")
-    except Exception as e:
-        print(f"❌ 寫入 Google Sheet 發生錯誤：{e}")
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user != self.original_author:
+            await interaction.response.send_message("這不是你的資產配置喔！", ephemeral=True)
+            return False
+        return True
 
-    # ✅ 加身分組
-    role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
-    if role:
+    @discord.ui.button(label="✅ 確認正確", style=discord.ButtonStyle.green)
+    async def confirm(self, interaction: discord.Interaction, button: Button):
+        # 1. UI 回饋：讓用戶知道機器人正在工作
+        await interaction.response.send_message("🔍 正在調取歷史數據、計算波動率並生成分析報告，請稍候約 10-15 秒...", ephemeral=False)
+        self.stop() # 移除按鈕
+        await interaction.message.edit(view=None)
+
         try:
-            await member.add_roles(role)
-            await ctx.send(f"✅ {member.mention} 授權成功！有效期 {start} ～ {end}")
-        except discord.Forbidden:
-            await ctx.send("❌ 無法給身分組，請檢查機器人角色順序與權限")
-    else:
-        await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
+            # 2. 提取風險偏好 (簡單關鍵字提取，或是可再串一次 AI)
+            # 這裡簡單示範：如果用戶輸入包含 "保守", "激進" 等詞
+            user_risk_pref = "未知"
+            raw_text = self.user_input_raw
+            if "保守" in raw_text or "低風險" in raw_text: user_risk_pref = "保守 (Conservative)"
+            elif "激進" in raw_text or "高風險" in raw_text: user_risk_pref = "激進 (Aggressive)"
+            elif "穩健" in raw_text: user_risk_pref = "穩健 (Moderate)"
 
-    print(f"[DEBUG] 給予角色與同步完成：{member.name} ID: {member.id}")
+            assets = self.asset_data['assets']
 
+            # 3. 執行 Python 分析 (計算 Risk Score)
+            # 這一步會去抓 yfinance 數據，可能需要幾秒
+            metrics, total_score = analysis.fetch_market_data(assets)
 
-@bot.command()
-@commands.has_permissions(manage_roles=True)
-async def authnew(ctx, member: discord.Member, days: int = 30):
-    from auth_db import load_auth_data, save_auth_data
-    from google_sheet_helper import update_auth_date
-    import sqlite3
+            # 4. 生成圖表 (Matplotlib)
+            chart_buffer = analysis.generate_charts(assets, total_score)
+            chart_file = discord.File(chart_buffer, filename="analysis.png")
 
-    today = datetime.today().date()
-    end = today + timedelta(days=days)
+            # 5. 執行 AI 評價 (生成雙重評語)
+            critique = await analysis.get_ai_critique(
+                openai_client, 
+                assets, 
+                metrics, 
+                total_score, 
+                user_risk_pref
+            )
 
-    # --- 更新 SQLite ---
-    conn = sqlite3.connect("auth.db")
-    c = conn.cursor()
-    c.execute('REPLACE INTO subscriptions (user_id, start_date, end_date) VALUES (?, ?, ?)',
-              (str(member.id), str(today), str(end)))
-    conn.commit()
-    conn.close()
-
-    # --- 更新本地 auth.json 快取 ---
-    data = load_auth_data()
-    data[str(member.id)] = {
-        "start": str(today),
-        "end": str(end)
-    }
-    save_auth_data(data)
-
-    # --- 更新 Google Sheet ---
-    print(f"[DEBUG] 強制寫入 Google Sheet：{member.id} | {today} ~ {end}")
-    update_auth_date(str(member.id), today, end)
-
-    # --- 加上 Discord 角色 ---
-    role = discord.utils.get(ctx.guild.roles, name=ROLE_NAME)
-    if role:
-        await member.add_roles(role)
-        await ctx.send(f"✅ {member.mention} 授權成功！（覆蓋）有效期 {today} ～ {end}")
-    else:
-        await ctx.send(f"⚠️ 未找到身分組 `{ROLE_NAME}`，請先建立該角色")
-
-    print(f"[DEBUG] authnew 完成：{member.display_name} ID: {member.id}")
-
-
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def checkauth(ctx, member: discord.Member):
-    valid, start, end = check_user_subscription(member.id)
-    if not start:
-        await ctx.send(f"❌ {member.mention} 尚未授權")
-    elif valid:
-        await ctx.send(f"🟢 {member.mention} 有效，授權期間：{start} ～ {end}")
-    else:
-        await ctx.send(f"🔴 {member.mention} 已過期，授權期間：{start} ～ {end}")
-
-async def check_and_update_subscriptions(guild: discord.Guild):
-    today = datetime.today().date()
-    all_subs = get_all_subscriptions()
-
-    for user_id, start_str, end_str in all_subs:
-        try:
-            member = guild.get_member(int(user_id))
-            if not member:
-                print(f"⚠️ 找不到用戶 ID: {user_id}")
-                continue
-
-            start = datetime.strptime(start_str, "%Y-%m-%d").date()
-            end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            days_left = (end - today).days
-
-            role_sub = discord.utils.get(guild.roles, name="已訂閱")
-            role_guest = discord.utils.get(guild.roles, name="遊客")
-
-            # 授權已過期：移除訂閱身分，轉為遊客
-            if today > end:
-                if role_sub and role_sub in member.roles:
-                    await member.remove_roles(role_sub)
-                    print(f"🔁 已移除 {member} 的訂閱身分")
-
-                if role_guest and role_guest not in member.roles:
-                    await member.add_roles(role_guest)
-                    print(f"🟡 已轉為遊客 {member}")
-
-                continue
-
-            # 即將到期：5天內提醒
-            if 0 < days_left <= 5:
-                # 私訊提醒
-                try:
-                    await member.send(
-                        f"📢 嗨 {member.display_name}，你的訂閱即將在 {days_left} 天後（{end}）到期，如要續訂請填寫表單並通知管理員哦！"
-                    )
-                    print(f"📨 已提醒 {member} 訂閱即將到期")
-                except discord.Forbidden:
-                    print(f"❌ 無法私訊 {member.display_name}，可能關閉私訊")
-
-                # 私人頻道同步提醒
-                try:
-                    private_channel = guild.get_channel(1377957354397761536)
-                    if private_channel:
-                        await private_channel.send(
-                            f"📋 用戶 {member.display_name}（ID: {member.id}）的訂閱將在 {days_left} 天後（{end}）到期。"
-                        )
-                        print(f"📤 已同步發送私人提醒：{member.display_name}")
-                    else:
-                        print("❌ 找不到私人頻道 ID: 1377957354397761536")
-                except Exception as e:
-                    print(f"❌ 發送私人頻道提醒失敗：{e}")
+            # 6. 發送最終報告
+            final_embed = discord.Embed(
+                title="📈 資產配置健檢報告",
+                description=f"**風險評分**: `{total_score:.1f}/100`\n**用戶偏好**: `{user_risk_pref}`",
+                color=0x00ff00 if total_score < 50 else 0xff0000
+            )
+            final_embed.set_image(url="attachment://analysis.png") # 引用附件圖片
+            
+            # 將 AI 的兩段評語分開放入 Embed Fields (更美觀)
+            # 這裡假設 AI 輸出的格式有 ### 分隔，我們簡單處理直接顯示文字
+            # 若要更精緻，可以用 split 切割 critique 字串
+            
+            await interaction.followup.send(content=critique, file=chart_file)
 
         except Exception as e:
-            print(f"❌ 處理用戶 {user_id} 時發生錯誤：{e}")
+            await interaction.followup.send(f"❌ 分析過程中發生錯誤: {str(e)}")
+            print(e)
 
-#-------------------------------------------------------------------------------------------------
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def authall(ctx):
-    from google_sheet_helper import get_sheet
+    @discord.ui.button(label="❌ 修改", style=discord.ButtonStyle.red)
+    async def cancel(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("已取消。", ephemeral=True)
+        self.stop()
+        await interaction.message.edit(view=None)
+
+@bot.command(name="health")
+async def health_check(ctx, *, user_input: str = None):
+    if not user_input:
+        await ctx.send("請輸入配置，例如：`!health 我很保守，持有 50% VOO, 50% 現金`")
+        return
+
+    msg = await ctx.send("🤖 正在解析配置...")
+
     try:
-        ws = get_sheet()
-        values = ws.get_all_values()[1:]  # 跳過表頭
-
-        total = 0
-        near_expiry = []
-        today = datetime.today().date()
-
-        for row in values:
-            if len(row) >= 8:
-                user_id = row[1].strip()
-                start_str = row[6].strip()
-                end_str = row[7].strip()
-
-                try:
-                    start = datetime.strptime(start_str, "%Y-%m-%d").date()
-                    end = datetime.strptime(end_str, "%Y-%m-%d").date()
-                    total += 1
-                    days_left = (end - today).days
-                    if 0 < days_left <= 5:
-                        near_expiry.append((user_id, days_left))
-                except Exception as e:
-                    print(f"⚠️ 無法解析日期：{user_id} | {start_str} ~ {end_str}")
-
-        near_expiry.sort(key=lambda x: x[1])
-
-        msg = f"📊 總訂閱用戶數：{total} 位\n"
-        if near_expiry:
-            msg += "⏰ 近 5 天即將過期的用戶 ID：\n"
-            for uid, d in near_expiry:
-                msg += f"- ID: `{uid}`（剩 {d} 天）\n"
-        else:
-            msg += "✅ 目前沒有用戶即將過期！"
-
-        await ctx.send(msg)
+        response = openai_client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            response_format={"type": "json_object"}, 
+            messages=[
+                {
+                    "role": "system", 
+                    "content": """
+                    將用戶輸入轉為 JSON。
+                    格式: {"assets": [{"name": "Ticker", "percentage": 30}, ...], "total": 100}
+                    重要：請盡量將名稱轉為 Yahoo Finance 代碼 (如 台積電 -> 2330.TW, Apple -> AAPL)。
+                    如果無法確定，保留原名。
+                    """
+                },
+                {"role": "user", "content": user_input}
+            ]
+        )
+        
+        data = json.loads(response.choices[0].message.content)
+        
+        # 顯示確認介面
+        # 注意：我們把原始輸入 user_input 傳進去，以便 Stage 3 提取風險偏好
+        view = ConfirmView(ctx.author, data, user_input)
+        
+        display_text = "### 📋 確認您的配置：\n"
+        for a in data['assets']:
+            display_text += f"• {a['name']}: {a['percentage']}%\n"
+            
+        await msg.edit(content=display_text, view=view)
 
     except Exception as e:
-        await ctx.send(f"❌ 無法讀取 Google Sheet：{e}")
+        await msg.edit(content=f"Error: {e}")
 
-#----------------------------------------------------------------------------------------------------------------
+@bot.event
+async def on_ready():
+    print(f"Bot is ready: {bot.user}")
 
-
-async def init_tasks():
-    await bot.wait_until_ready()
-    init_db()
-    print(f"✅ 授權機器人已啟動：{bot.user}")
-
-    async def daily_check():
-        while not bot.is_closed():
-            for guild in bot.guilds:
-                await check_and_update_subscriptions(guild)
-            await asyncio.sleep(86400)
-
-    bot.loop.create_task(daily_check())
-
-async def main():
-    async with bot:
-        bot.loop.create_task(init_tasks())
-        await bot.start(TOKEN)
-
-if __name__ == '__main__':
-    if not TOKEN:
-        print("❌ 請設定 AUTH_BOT_TOKEN 環境變數")
-    else:
-        asyncio.run(main())
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
