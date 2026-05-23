@@ -126,13 +126,13 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     draw.text((46, 38), "認購權證篩選", font=f_title, fill=(13, 77, 123))
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
     draw.text((46, 142), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
-    draw.text((46, 232), f"依照各參數比重評分排序，符合條件共{total_found}筆", font=f_sub, fill=(78, 140, 176))
+    draw.text((46, 232), f"依照各參數比重評分排序，符合條件共{total_found}筆", font=f_sub, fill=(35, 35, 35))
     notice = "股市艾斯出品，請勿轉傳"
     notice_bbox = draw.textbbox((0, 0), notice, font=f_notice)
     notice_w = notice_bbox[2] - notice_bbox[0]
     draw.text((card_x + card_w - notice_w - 16, card_y + 8), notice, font=f_notice, fill=(77, 109, 126))
 
-    col_x = [46, 700, 900, 1080, 1260, 1410]
+    col_x = [46, 700, 900, 1070, 1240, 1410]
     headers = ["量", "現價", "天數", "價外 %", "差槓比", "槓桿"]
     y0 = 334
     for i, h in enumerate(headers):
@@ -166,11 +166,11 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         y += row_h
 
     draw.line((card_x + 12, card_y + card_h - 105, card_x + card_w - 12, card_y + card_h - 105), fill=(188, 211, 221), width=2)
-    foot = ["量≥500", "90-180天", "外≤10%", "槓>5x"]
+    foot = ["量≥500", "90-180天", "外≤10%", "槓>5x", "差槓<0.3%"]
     x = 40
     for t in foot:
         draw.text((x, card_y + card_h - 78), t, font=f_foot, fill=(35, 35, 35))
-        x += 370
+        x += 300
 
     tmp = tempfile.mkdtemp(prefix='warrant-card-')
     out = Path(tmp) / f"warrant_{stock_code}.png"
