@@ -1,4 +1,5 @@
 import os
+import asyncio
 import re
 import json
 import logging
@@ -129,7 +130,7 @@ async def on_message(message: discord.Message):
         loading = await message.channel.send("最佳權證查詢中⏳ ~")
         try:
             logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
-            result = fetch_warrant_results(stock_code)
+            result = await asyncio.to_thread(fetch_warrant_results, stock_code)
             logger.info("[warrant-cmd] fetch done: stock=%s source=%s total_found=%s", stock_code, result.get("source"), result.get("total_found"))
             warrants = result.get("warrants", [])
             if not warrants:
@@ -137,11 +138,35 @@ async def on_message(message: discord.Message):
                 await loading.edit(content=f"找不到 `{stock_code}` 可用權證資料（來源：{result.get('source', 'none')}）。")
                 return
 
-            image_path = render_warrant_card_image(stock_code, result)
-            card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
-            await loading.edit(content="")
-            await message.channel.send(file=card_file)
-            logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
+            try:
+                image_path = await asyncio.to_thread(render_warrant_card_image, stock_code, result)
+                card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
+                await loading.edit(content="")
+                await message.channel.send(file=card_file)
+                logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
+            except Exception as render_err:
+                logger.exception("[warrant-cmd] image render failed, fallback to embed: stock=%s", stock_code)
+                embed = discord.Embed(
+                    title=f"{stock_code} 認購權證清單",
+                    description=(
+                        f"來源：{result.get('source', 'N/A')}｜"
+                        f"母股價：{result.get('stock_price') or 'N/A'}｜"
+                        f"符合筆數：{result.get('total_found', 0)}\n"
+                        f"⚠️ 圖卡渲染失敗，改用文字卡（{type(render_err).__name__}）"
+                    ),
+                    color=discord.Color.orange(),
+                )
+                for idx, w in enumerate(warrants[:10], start=1):
+                    embed.add_field(
+                        name=f"#{idx} {w.get('code', 'N/A')} {w.get('name', '')}",
+                        value=(
+                            f"天數: {w.get('days', 'N/A')}｜OTM: {w.get('otm_str', 'N/A')}\n"
+                            f"價: {w.get('price', 0)}｜量: {w.get('volume', 0)}\n"
+                            f"槓桿: {w.get('lev', 'N/A')}｜分數: {w.get('_score', 'N/A')}"
+                        ),
+                        inline=False,
+                    )
+                await loading.edit(content="", embed=embed)
         except Exception as e:
             logger.exception("[warrant-cmd] failed: stock=%s", stock_code)
             await loading.edit(content=f"❌ 指令執行失敗：{e}")
