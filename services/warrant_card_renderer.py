@@ -2,6 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 from glob import glob
+import subprocess
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -19,6 +20,16 @@ def _pick_font(size: int):
     candidates.extend(glob('/nix/store/*noto-fonts-cjk*/share/fonts/opentype/noto/*.otf'))
     candidates.extend(glob('/nix/store/*dejavu-fonts*/share/fonts/truetype/*.ttf'))
 
+    # fallback: query fontconfig if available
+    try:
+        out = subprocess.check_output(['fc-list', ':lang=zh', 'file'], text=True, stderr=subprocess.DEVNULL)
+        for line in out.splitlines():
+            fp = line.strip().split(':', 1)[0]
+            if fp:
+                candidates.append(fp)
+    except Exception:
+        pass
+
     seen = set()
     for fp in candidates:
         if not fp or fp in seen:
@@ -26,12 +37,12 @@ def _pick_font(size: int):
         seen.add(fp)
         if os.path.isfile(fp):
             try:
-                return ImageFont.truetype(fp, size)
+                return ImageFont.truetype(fp, size), fp
             except Exception:
                 continue
 
     # final fallback: default bitmap font (small / no CJK)
-    return ImageFont.load_default()
+    return ImageFont.load_default(), 'PIL_DEFAULT'
 
 
 def _dot(draw: ImageDraw.ImageDraw, x: int, y: int, color: str):
@@ -81,13 +92,13 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     img = Image.new("RGB", (W, H), (219, 230, 235))
     draw = ImageDraw.Draw(img)
 
-    f_title = _pick_font(72)
-    f_meta = _pick_font(54)
-    f_sub = _pick_font(38)
-    f_th = _pick_font(34)
-    f_row1 = _pick_font(38)
-    f_row2 = _pick_font(32)
-    f_foot = _pick_font(30)
+    f_title, font_path = _pick_font(72)
+    f_meta, _ = _pick_font(54)
+    f_sub, _ = _pick_font(38)
+    f_th, _ = _pick_font(34)
+    f_row1, _ = _pick_font(38)
+    f_row2, _ = _pick_font(32)
+    f_foot, _ = _pick_font(30)
 
     card_x, card_y = 20, 20
     card_w, card_h = W - 28, H - 28
@@ -98,6 +109,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
     draw.text((40, 92), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
     draw.text((40, 146), f"⚡ {source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
+    draw.text((40, 188), f"font: {Path(font_path).name if font_path != "PIL_DEFAULT" else font_path}", font=_pick_font(20)[0], fill=(120, 140, 152))
 
     col_x = [40, 560, 740, 900, 1040]
     headers = ["量", "天數", "價外 %", "差槓比", "槓桿"]
