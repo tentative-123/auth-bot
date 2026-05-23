@@ -141,8 +141,9 @@ async def on_message(message: discord.Message):
             try:
                 image_path = await asyncio.to_thread(render_warrant_card_image, stock_code, result)
                 card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
-                await loading.edit(content="")
-                await message.channel.send(file=card_file)
+                await loading.edit(content="✅ 查詢完成，正在送出圖卡…")
+                await message.channel.send(content="📊 最佳權證一頁式圖卡", file=card_file)
+                await loading.edit(content="✅ 圖卡已送出")
                 logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
             except Exception as render_err:
                 logger.exception("[warrant-cmd] image render failed, fallback to embed: stock=%s", stock_code)
@@ -166,7 +167,7 @@ async def on_message(message: discord.Message):
                         ),
                         inline=False,
                     )
-                await loading.edit(content="", embed=embed)
+                await loading.edit(content="⚠️ 圖卡渲染失敗，改用文字卡", embed=embed)
         except Exception as e:
             logger.exception("[warrant-cmd] failed: stock=%s", stock_code)
             await loading.edit(content=f"❌ 指令執行失敗：{e}")
