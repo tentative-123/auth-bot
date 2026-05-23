@@ -103,33 +103,35 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     img = Image.new("RGB", (W, H), (219, 230, 235))
     draw = ImageDraw.Draw(img)
 
-    f_title, font_path = _pick_font(88)
-    f_meta, _ = _pick_font(64)
-    f_sub, _ = _pick_font(42)
+    f_title, _ = _pick_font(82)
+    f_meta, _ = _pick_font(56)
+    f_sub, _ = _pick_font(34)
+    f_notice, _ = _pick_font(26)
     f_th, _ = _pick_font(38)
     f_row1, _ = _pick_font(44)
     f_row2, _ = _pick_font(36)
     f_foot, _ = _pick_font(34)
-    f_small, _ = _pick_font(22)
 
     card_x, card_y = 20, 20
     card_w, card_h = W - 40, H - 40
     draw.rounded_rectangle((card_x, card_y, card_x + card_w, card_y + card_h), radius=16, fill=(229, 242, 247), outline=(150, 179, 192), width=2)
-    draw.rectangle((card_x + 1, card_y + 1, card_x + card_w - 1, card_y + 250), fill=(211, 236, 246))
+    header_bottom = card_y + 300
+    draw.rectangle((card_x + 1, card_y + 1, card_x + card_w - 1, header_bottom), fill=(211, 236, 246))
+    draw.rectangle((card_x + 1, header_bottom, card_x + card_w - 1, card_y + card_h - 1), fill=(255, 255, 255))
 
     draw.text((46, 38), "🎯 認購權證篩選", font=f_title, fill=(13, 77, 123))
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
-    draw.text((46, 114), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
-    draw.text((46, 182), f"⚡ {source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
-    draw.text((46, 224), f"font: {Path(font_path).name if font_path != 'PIL_DEFAULT' else font_path}", font=f_small, fill=(120, 140, 152))
+    draw.text((46, 122), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
+    draw.text((46, 194), f"⚡ {source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
+    draw.text((card_x + card_w - 520, 24), "股市艾斯出品，請勿轉傳", font=f_notice, fill=(77, 109, 126))
 
     col_x = [46, 760, 980, 1190, 1370]
     headers = ["量", "天數", "價外 %", "差槓比", "槓桿"]
-    y0 = 286
+    y0 = 334
     for i, h in enumerate(headers):
-        draw.text((col_x[i], y0), h, font=f_th, fill=(122, 138, 147))
+        draw.text((col_x[i], y0), h, font=f_th, fill=(60, 60, 60))
 
-    y = 346
+    y = 394
     row_h = 175
     for w in warrants:
         draw.line((card_x + 12, y - 8, card_x + card_w - 12, y - 8), fill=(199, 220, 229), width=1)
@@ -141,23 +143,23 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         dj = w.get("dj_ratio")
         lev = w.get("lev")
 
-        draw.text((col_x[0], y), f"{code} {name}", font=f_row1, fill=(36, 63, 119))
+        draw.text((col_x[0], y), f"{code} {name}", font=f_row1, fill=(18, 30, 42))
         _dot(draw, col_x[0], y + 64, _vol_color(vol))
-        draw.text((col_x[0] + 34, y + 56), f"{int(vol):,}張", font=f_row2, fill=(47, 159, 83))
+        draw.text((col_x[0] + 34, y + 56), f"{int(vol):,}張", font=f_row2, fill=(35, 35, 35))
 
-        _dot(draw, col_x[1], y + 18, _day_color(days)); draw.text((col_x[1] + 32, y + 8), f"{days}天", font=f_row2, fill=(29, 53, 80))
-        _dot(draw, col_x[2], y + 18, _otm_color(otm)); draw.text((col_x[2] + 32, y + 8), otm, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[1], y + 18, _day_color(days)); draw.text((col_x[1] + 32, y + 8), f"{days}天", font=f_row2, fill=(35, 35, 35))
+        _dot(draw, col_x[2], y + 18, _otm_color(otm)); draw.text((col_x[2] + 32, y + 8), otm, font=f_row2, fill=(35, 35, 35))
         dj_text = "-" if dj is None else f"{dj:.2f}%"
-        _dot(draw, col_x[3], y + 18, _dj_color(dj)); draw.text((col_x[3] + 32, y + 8), dj_text, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[3], y + 18, _dj_color(dj)); draw.text((col_x[3] + 32, y + 8), dj_text, font=f_row2, fill=(35, 35, 35))
         lev_text = "-" if lev is None else f"{lev}x"
-        _dot(draw, col_x[4], y + 18, _lev_color(lev)); draw.text((col_x[4] + 32, y + 8), lev_text, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[4], y + 18, _lev_color(lev)); draw.text((col_x[4] + 32, y + 8), lev_text, font=f_row2, fill=(35, 35, 35))
         y += row_h
 
     draw.line((card_x + 12, card_y + card_h - 105, card_x + card_w - 12, card_y + card_h - 105), fill=(188, 211, 221), width=2)
     foot = ["量≥500", "90-180天", "外≤10%", "槓≤5x"]
     x = 40
     for t in foot:
-        draw.text((x, card_y + card_h - 78), t, font=f_foot, fill=(90, 165, 112))
+        draw.text((x, card_y + card_h - 78), t, font=f_foot, fill=(35, 35, 35))
         x += 370
 
     tmp = tempfile.mkdtemp(prefix='warrant-card-')
