@@ -80,13 +80,13 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
         rows.append(f"""
         <tr>
           <td class='wname'>
-            <div class='line1'><span class='txt'>{html.escape(code)} {html.escape(name)}</span></div>
-            <div class='line2'>{_dot(vol_color)}<span class='txt'>{int(vol):,}張</span></div>
+            <div class='line1'><span class='txt' style='color:#243f77;font-weight:900;'>{html.escape(code)} {html.escape(name)}</span></div>
+            <div class='line2'>{_dot(vol_color)}<span class='txt' style='color:#2f9f53;font-weight:900;'>{int(vol):,}張</span></div>
           </td>
-          <td class='cell'>{_dot(day_color)}<span class='txt'>{days}天</span></td>
-          <td class='cell'>{_dot(otm_color)}<span class='txt'>{html.escape(otm_str)}</span></td>
-          <td class='cell'>{_dot(dj_color)}<span class='txt'>{html.escape(dj_text)}</span></td>
-          <td class='cell'>{_dot(lev_color)}<span class='txt'>{html.escape(lev_text)}</span></td>
+          <td class='cell'>{_dot(day_color)}<span class='txt' style='color:#1d3550;font-weight:800;'>{days}天</span></td>
+          <td class='cell'>{_dot(otm_color)}<span class='txt' style='color:#1d3550;font-weight:800;'>{html.escape(otm_str)}</span></td>
+          <td class='cell'>{_dot(dj_color)}<span class='txt' style='color:#1d3550;font-weight:800;'>{html.escape(dj_text)}</span></td>
+          <td class='cell'>{_dot(lev_color)}<span class='txt' style='color:#1d3550;font-weight:800;'>{html.escape(lev_text)}</span></td>
         </tr>
         """)
 
@@ -121,17 +121,17 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
 <body>
   <div class='card'>
     <div class='head'>
-      <div class='title'>🎯 認購權證篩選</div>
-      <div class='meta'>{html.escape(stock_code)}  現價 {px}</div>
-      <div class='sub'>⚡ {html.escape(str(source))}・依筆數排序・共 {total_found} 筆</div>
+      <div class='title'><span style='color:#0d4d7b;font-weight:900;'>🎯 認購權證篩選</span></div>
+      <div class='meta'><span style='color:#3b78a5;font-weight:800;'>{html.escape(stock_code)} 現價 {px}</span></div>
+      <div class='sub'><span style='color:#4e8cb0;font-weight:700;'>⚡ {html.escape(str(source))}・依筆數排序・共 {total_found} 筆</span></div>
     </div>
     <div class='table-wrap'>
       <table>
-        <thead><tr><th>量</th><th>天數</th><th>價外 %</th><th>差槓比</th><th>槓桿</th></tr></thead>
+        <thead><tr><th><span style='color:#7a8a93'>量</span></th><th><span style='color:#7a8a93'>天數</span></th><th><span style='color:#7a8a93'>價外 %</span></th><th><span style='color:#7a8a93'>差槓比</span></th><th><span style='color:#7a8a93'>槓桿</span></th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
       </table>
     </div>
-    <div class='foot'><span>量≥500</span><span>90-180天</span><span>外≤10%</span><span>槓≤5x</span></div>
+    <div class='foot'><span style='color:#5aa570'>量≥500</span><span style='color:#5aa570'>90-180天</span><span style='color:#5aa570'>外≤10%</span><span style='color:#5aa570'>槓≤5x</span></div>
   </div>
 </body>
 </html>
