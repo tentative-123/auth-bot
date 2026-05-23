@@ -80,13 +80,13 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
         rows.append(f"""
         <tr>
           <td class='wname'>
-            <div class='line1'>{html.escape(code)} {html.escape(name)}</div>
-            <div class='line2'>{_dot(vol_color)}{int(vol):,}張</div>
+            <div class='line1'><span class='txt'>{html.escape(code)} {html.escape(name)}</span></div>
+            <div class='line2'>{_dot(vol_color)}<span class='txt'>{int(vol):,}張</span></div>
           </td>
-          <td class='cell'>{_dot(day_color)}{days}天</td>
-          <td class='cell'>{_dot(otm_color)}{html.escape(otm_str)}</td>
-          <td class='cell'>{_dot(dj_color)}{html.escape(dj_text)}</td>
-          <td class='cell'>{_dot(lev_color)}{html.escape(lev_text)}</td>
+          <td class='cell'>{_dot(day_color)}<span class='txt'>{days}天</span></td>
+          <td class='cell'>{_dot(otm_color)}<span class='txt'>{html.escape(otm_str)}</span></td>
+          <td class='cell'>{_dot(dj_color)}<span class='txt'>{html.escape(dj_text)}</span></td>
+          <td class='cell'>{_dot(lev_color)}<span class='txt'>{html.escape(lev_text)}</span></td>
         </tr>
         """)
 
@@ -98,7 +98,7 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
 <head>
 <meta charset='utf-8'>
 <style>
-  body {{ margin:0; padding:14px; background:#dbe6eb; font-family:'Noto Sans TC','Microsoft JhengHei',sans-serif; }}
+  body {{ margin:0; padding:14px; background:#dbe6eb; font-family:'Arial','Noto Sans TC','Microsoft JhengHei',sans-serif; }}
   .card {{ width:760px; background:#e5f2f7; border:1px solid #96b3c0; border-radius:10px; overflow:hidden; }}
   .head {{ padding:14px 16px 8px; background:linear-gradient(#d7eef7,#d0e9f5); }}
   .title {{ font-size:42px; font-weight:900; color:#0d4d7b; line-height:1.05; }}
@@ -172,8 +172,6 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--hide-scrollbars")
-    opts.add_argument("--force-device-scale-factor=2")
-    opts.add_argument("--high-dpi-support=1")
     opts.add_argument("--window-size=1200,2200")
     driver_path = _resolve_exec("CHROMEDRIVER_PATH", ["chromedriver"])
     service = Service(executable_path=driver_path) if driver_path else Service()
