@@ -113,6 +113,10 @@ async def on_message(message: discord.Message):
         return
 
     content = message.content.strip().lower()
+    if not content:
+        logger.warning("[discord] empty message content received (check MESSAGE CONTENT INTENT in Discord Developer Portal): guild=%s channel=%s user=%s", getattr(message.guild, "id", "dm"), message.channel.id, message.author.id)
+        await bot.process_commands(message)
+        return
     m = re.fullmatch(r"a(\d{4,6})", content)
     if m:
         stock_code = m.group(1)
@@ -159,9 +163,13 @@ async def on_message(message: discord.Message):
 
 @bot.event
 async def on_ready():
-    print(f"Bot is ready: {bot.user}")
+    logger.info("[startup] Bot is ready: %s (id=%s)", bot.user, bot.user.id if bot.user else "unknown")
 
 
 if __name__ == "__main__":
-    if DISCORD_TOKEN:
-        bot.run(DISCORD_TOKEN)
+    logger.info("[startup] booting auth-bot")
+    if not DISCORD_TOKEN:
+        logger.error("[startup] DISCORD_TOKEN is missing. Bot will not start.")
+        raise SystemExit(1)
+    logger.info("[startup] DISCORD_TOKEN detected, starting Discord client")
+    bot.run(DISCORD_TOKEN)
