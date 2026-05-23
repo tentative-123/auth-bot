@@ -29,4 +29,5 @@ nixPkgs = [
   "xorg.libxcb",
   "xorg.libxshmfence",
   "xorg.libXtst",
+  "noto-fonts-cjk-sans",
 ]
