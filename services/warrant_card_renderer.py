@@ -1,6 +1,7 @@
 import html
 import os
 import tempfile
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +90,17 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
 """
 
 
+
+def _resolve_exec(env_key: str, candidates: list[str]) -> str | None:
+    env_path = os.getenv(env_key)
+    if env_path and os.path.isfile(env_path):
+        return env_path
+    for name in candidates:
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
 def render_warrant_card_image(stock_code: str, result: dict) -> str:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -101,7 +113,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     html_path.write_text(html_content, encoding="utf-8")
 
     opts = Options()
-    chrome_bin = os.getenv("CHROME_BIN")
+    chrome_bin = _resolve_exec("CHROME_BIN", ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"])
     if chrome_bin:
         opts.binary_location = chrome_bin
     opts.add_argument("--headless=new")
@@ -110,7 +122,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     opts.add_argument("--window-size=840,1500")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-software-rasterizer")
-    driver_path = os.getenv("CHROMEDRIVER_PATH")
+    driver_path = _resolve_exec("CHROMEDRIVER_PATH", ["chromedriver"])
     service = Service(executable_path=driver_path) if driver_path else Service()
     driver = webdriver.Chrome(service=service, options=opts)
     try:

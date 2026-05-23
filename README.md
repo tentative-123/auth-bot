@@ -25,7 +25,7 @@ auth-bot/
 ### Stage 0：文字指令觸發（`main.py`）
 - `a2330`（`a` + 4~6碼）可觸發認購權證查詢，會先回覆「最佳權證查詢中⏳ ~」，完成後以 HTML 排版截圖輸出一頁式卡片。
 - 若部署環境缺少 Chrome/Chromedriver，系統會自動退回 Discord 文字卡片（不中斷查詢流程）。
-- Railway 建議使用專案內 `nixpacks.toml` 安裝 Chromium/Chromedriver，避免 `WebDriverException (status 127)`。
+- Railway 建議使用專案內 `nixpacks.toml` 安裝 Chromium/Chromedriver；程式會自動用 PATH 尋找瀏覽器與 driver，避免固定路徑失效。
 
 ### Stage 1：輸入解析與確認（`main.py`）
 - 使用者透過 `$health` 指令輸入資產配置（可混合比例/金額/自然語言）。
