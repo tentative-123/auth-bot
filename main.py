@@ -10,7 +10,11 @@ from openai import AsyncOpenAI
 import analysis
 from services.warrant_screener import fetch_warrant_results
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("discord_token")
+DISCORD_TOKEN = (
+    os.getenv("DISCORD_TOKEN")
+    or os.getenv("DISCORD_BOT_TOKEN")
+    or os.getenv("discord_token")
+)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ENABLE_HEALTH_FLOW = False
 
@@ -169,8 +173,8 @@ async def on_ready():
 if __name__ == "__main__":
     logger.info("[startup] booting auth-bot")
     if not DISCORD_TOKEN:
-        present_keys = [k for k in ("DISCORD_TOKEN", "discord_token") if os.getenv(k)]
-        logger.error("[startup] DISCORD_TOKEN is missing. Bot will not start. Checked keys=DISCORD_TOKEN/discord_token, present=%s", present_keys)
+        present_keys = [k for k in ("DISCORD_TOKEN", "DISCORD_BOT_TOKEN", "discord_token") if os.getenv(k)]
+        logger.error("[startup] DISCORD_TOKEN is missing. Bot will not start. Checked keys=DISCORD_TOKEN/DISCORD_BOT_TOKEN/discord_token, present=%s", present_keys)
         raise SystemExit(1)
     logger.info("[startup] DISCORD_TOKEN detected, starting Discord client")
     bot.run(DISCORD_TOKEN)

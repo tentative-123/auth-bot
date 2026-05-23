@@ -81,7 +81,7 @@ auth-bot/
 
 執行前需設定：
 
-- `DISCORD_TOKEN`：Discord Bot Token（Railway 若沿用舊變數名 `discord_token`，目前程式也相容）
+- `DISCORD_TOKEN`：Discord Bot Token（也相容 `DISCORD_BOT_TOKEN`、`discord_token`）
 - `OPENAI_API_KEY`：OpenAI API Key
 
 若未設定 `OPENAI_API_KEY`，Bot 會提示錯誤並無法執行 `$health` 分析流程。
