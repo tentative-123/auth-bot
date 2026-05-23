@@ -88,9 +88,13 @@ def _dj_color(dj) -> str:
 
 
 def _lev_color(lev) -> str:
-    if isinstance(lev, (int, float)) and lev <= 2.5:
+    if not isinstance(lev, (int, float)):
+        return "red"
+    if lev < 3:
+        return "red"
+    if lev <= 6:
         return "yellow"
-    return "red"
+    return "green"
 
 
 def render_warrant_card_image(stock_code: str, result: dict) -> str:
@@ -121,8 +125,8 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
 
     draw.text((46, 38), "認購權證篩選", font=f_title, fill=(13, 77, 123))
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
-    draw.text((46, 130), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
-    draw.text((46, 222), f"{source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
+    draw.text((46, 142), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
+    draw.text((46, 232), f"依照各參數比重評分排序，符合條件共{total_found}筆", font=f_sub, fill=(78, 140, 176))
     notice = "股市艾斯出品，請勿轉傳"
     notice_bbox = draw.textbbox((0, 0), notice, font=f_notice)
     notice_w = notice_bbox[2] - notice_bbox[0]
@@ -162,7 +166,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         y += row_h
 
     draw.line((card_x + 12, card_y + card_h - 105, card_x + card_w - 12, card_y + card_h - 105), fill=(188, 211, 221), width=2)
-    foot = ["量≥500", "90-180天", "外≤10%", "槓≤5x"]
+    foot = ["量≥500", "90-180天", "外≤10%", "槓>5x"]
     x = 40
     for t in foot:
         draw.text((x, card_y + card_h - 78), t, font=f_foot, fill=(35, 35, 35))
