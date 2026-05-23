@@ -5,3 +5,6 @@ yfinance
 pandas
 matplotlib
 numpy
+
+requests
+selenium
