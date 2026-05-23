@@ -1,29 +1,39 @@
+import os
+import asyncio
+import re
+import json
+import logging
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
-from openai import AsyncOpenAI  # <--- 改用 AsyncOpenAI
-import os
-import json
-import analysis 
+from openai import AsyncOpenAI
 
-# --- 讀取環境變數 ---
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+import analysis
+from services.warrant_screener import fetch_warrant_results
+from services.warrant_card_renderer import render_warrant_card_image
+
+DISCORD_TOKEN = (
+    os.getenv("DISCORD_TOKEN")
+    or os.getenv("DISCORD_BOT_TOKEN")
+    or os.getenv("discord_token")
+)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ENABLE_HEALTH_FLOW = False
 
-# --- 初始化 Async OpenAI 客戶端 ---
 if OPENAI_API_KEY:
-    # 注意：這裡改用 AsyncOpenAI
     openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 else:
     print("⚠️ 警告: 未檢測到 OPENAI_API_KEY")
     openai_client = None
 
-# --- 初始化 Discord Bot ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
-# --- Stage 2: 確認按鈕 ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logger = logging.getLogger("auth-bot")
+
+
 class ConfirmView(View):
     def __init__(self, original_author, asset_data, user_input_raw):
         super().__init__(timeout=180)
@@ -39,60 +49,47 @@ class ConfirmView(View):
 
     @discord.ui.button(label="✅ 確認正確", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: Button):
-        # 先 defer 回應，避免處理超時
         await interaction.response.defer()
         status_msg = await interaction.followup.send("🔍 正在調取市場數據並進行風險運算 (這可能需要 15-20 秒)...")
-        
-        # 移除按鈕
         self.stop()
         await interaction.message.edit(view=None)
-
         try:
             user_risk_pref = "未知"
             raw_text = self.user_input_raw
-            if "保守" in raw_text or "低風險" in raw_text: user_risk_pref = "保守"
-            elif "激進" in raw_text or "高風險" in raw_text: user_risk_pref = "激進"
-            elif "穩健" in raw_text: user_risk_pref = "穩健"
+            if "保守" in raw_text or "低風險" in raw_text:
+                user_risk_pref = "保守"
+            elif "激進" in raw_text or "高風險" in raw_text:
+                user_risk_pref = "激進"
+            elif "穩健" in raw_text:
+                user_risk_pref = "穩健"
 
             assets = self.asset_data['assets']
-            
-            # 1. 抓取數據 (這裡 analysis.py 還是同步的，但因為很快通常沒關係，若要極致優化也可改)
             metrics, total_score = analysis.fetch_market_data(assets)
-            
-            # 2. 畫圖
             chart_buffer = analysis.generate_charts(assets, total_score)
             chart_file = discord.File(chart_buffer, filename="analysis.png")
-            
-            # 3. AI 評論 (傳入 async client)
-            # 注意：這裡我們呼叫 analysis 裡的函數，需確保 analysis 裡也有對應修改，
-            # 但為了簡單起見，我們直接在 main.py 處理這段 AI 呼叫，避免改動 analysis.py 太大
-            
+
             system_prompt = f"""
             你是一個專業的資產配置顧問。
             數據：風險分 {total_score:.1f}/100。
             用戶偏好：{user_risk_pref}。
-            
+
             請給出兩段簡短評語：
             1. 風險等級與預期波動
             2. 優化建議
             """
-            
-            # 使用 await 非同步呼叫
+
             response = await openai_client.chat.completions.create(
                 model="gpt-4-turbo-preview",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(assets, ensure_ascii=False)}
                 ],
-                max_tokens=1000  # 限制長度，防止無限迴圈
+                max_tokens=1000
             )
             critique = response.choices[0].message.content
-
             await status_msg.edit(content=critique, attachments=[chart_file])
-
         except Exception as e:
             await status_msg.edit(content=f"❌ 分析錯誤: {str(e)}")
-            print(f"Stage 3 Error: {e}")
 
     @discord.ui.button(label="❌ 修改", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: Button):
@@ -100,9 +97,13 @@ class ConfirmView(View):
         self.stop()
         await interaction.message.edit(view=None)
 
-# --- Stage 1: 核心解析邏輯 ---
+
 @bot.command(name="health")
 async def health_check(ctx, *, user_input: str = None):
+    if not ENABLE_HEALTH_FLOW:
+        await ctx.send("⚠️ 目前 `$health` 功能已暫停啟用。")
+        return
+
     if not openai_client:
         await ctx.send("❌ 錯誤：Bot 尚未設定 OpenAI API Key。")
         return
@@ -111,72 +112,80 @@ async def health_check(ctx, *, user_input: str = None):
         await ctx.send("請輸入您的配置，例如：`$health 50% VOO, 50% 現金`")
         return
 
-    msg = await ctx.send("🤖 正在進行數學運算與資產標準化...")
 
-    try:
-        # 使用 await 非同步呼叫 OpenAI
-        response = await openai_client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            response_format={"type": "json_object"}, 
-            max_tokens=500, # 限制最大 Token 數，防止 27k 字的鬼打牆
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """
-                    你是一個資產配置「計算與標準化」引擎。
-                    目標：輸出標準 JSON: {"assets": [{"name": "Ticker", "percentage": 30.5}], "total": 100}
-                    
-                    規則：
-                    1. **單位統一**：將金額統一換算為 USD (假設 1 USD = 32 TWD) 計算權重。
-                    2. **推算邏輯**：
-                       - 若用戶混合金額與百分比，請嘗試推算總值。
-                       - 範例: "A有$1000 (20%), B有..." -> 暗示總資產 $5000。
-                    3. **模糊資產處理**：
-                       - "AAA債卷ETF" -> name: "AGG" 或 "BND" (取代碼)
-                       - "亂買的ETF" -> name: "Unknown ETF"
-                       - "現金/Cash" -> name: "現金"
-                    4. **錯誤處理**：
-                       - 若數學邏輯不通或無法計算，回傳 {"status": "error", "message": "原因"}
-                    """
-                },
-                {"role": "user", "content": user_input}
-            ]
-        )
-        
-        content = response.choices[0].message.content
-        
-        # 除錯：如果又發生錯誤，印出內容長度
-        print(f"OpenAI Response Length: {len(content)}")
-        if len(content) > 5000:
-             await msg.edit(content="⚠️ AI 回傳內容過長，判定為運算錯誤，請簡化輸入。")
-             return
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
 
-        data = json.loads(content)
-        
-        if data.get("status") == "error":
-            await msg.edit(content=f"⚠️ **無法解析**：{data.get('message')}")
-            return
+    content = message.content.strip().lower()
+    if not content:
+        logger.warning("[discord] empty message content received (check MESSAGE CONTENT INTENT in Discord Developer Portal): guild=%s channel=%s user=%s", getattr(message.guild, "id", "dm"), message.channel.id, message.author.id)
+        await bot.process_commands(message)
+        return
+    m = re.fullmatch(r"a(\d{4,6})", content)
+    if m:
+        stock_code = m.group(1)
+        logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
+        loading = await message.channel.send("最佳權證查詢中⏳ ~")
+        try:
+            logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
+            result = await asyncio.to_thread(fetch_warrant_results, stock_code)
+            logger.info("[warrant-cmd] fetch done: stock=%s source=%s total_found=%s", stock_code, result.get("source"), result.get("total_found"))
+            warrants = result.get("warrants", [])
+            if not warrants:
+                logger.info("[warrant-cmd] no result: stock=%s source=%s", stock_code, result.get("source", "none"))
+                await loading.edit(content=f"找不到 `{stock_code}` 可用權證資料（來源：{result.get('source', 'none')}）。")
+                return
 
-        view = ConfirmView(ctx.author, data, user_input)
-        
-        display_text = "### 📊 初步運算結果：\n"
-        for a in data.get('assets', []):
-            display_text += f"• **{a['name']}**: `{a['percentage']:.1f}%`\n"
-            
-        await msg.edit(content=display_text, view=view)
+            try:
+                image_path = await asyncio.to_thread(render_warrant_card_image, stock_code, result)
+                card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
+                await loading.edit(content="✅ 查詢完成，正在送出圖卡…")
+                await message.channel.send(content="📊 最佳權證一頁式圖卡", file=card_file)
+                await loading.edit(content="✅ 圖卡已送出")
+                logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
+            except Exception as render_err:
+                logger.exception("[warrant-cmd] image render failed, fallback to embed: stock=%s", stock_code)
+                embed = discord.Embed(
+                    title=f"{stock_code} 認購權證清單",
+                    description=(
+                        f"來源：{result.get('source', 'N/A')}｜"
+                        f"母股價：{result.get('stock_price') or 'N/A'}｜"
+                        f"符合筆數：{result.get('total_found', 0)}\n"
+                        f"⚠️ 圖卡渲染失敗，改用文字卡（{type(render_err).__name__}）"
+                    ),
+                    color=discord.Color.orange(),
+                )
+                for idx, w in enumerate(warrants[:10], start=1):
+                    embed.add_field(
+                        name=f"#{idx} {w.get('code', 'N/A')} {w.get('name', '')}",
+                        value=(
+                            f"天數: {w.get('days', 'N/A')}｜OTM: {w.get('otm_str', 'N/A')}\n"
+                            f"價: {w.get('price', 0)}｜量: {w.get('volume', 0)}\n"
+                            f"槓桿: {w.get('lev', 'N/A')}｜分數: {w.get('_score', 'N/A')}"
+                        ),
+                        inline=False,
+                    )
+                await loading.edit(content="⚠️ 圖卡渲染失敗，改用文字卡", embed=embed)
+        except Exception as e:
+            logger.exception("[warrant-cmd] failed: stock=%s", stock_code)
+            await loading.edit(content=f"❌ 指令執行失敗：{e}")
+        return
 
-    except json.JSONDecodeError:
-        # 捕捉 JSON 解析失敗 (通常是因為 AI 講廢話講太多導致被切斷)
-        await msg.edit(content="❌ AI 運算發生格式錯誤，請再試一次。")
-        print(f"JSON Error Content: {content[:200]}...") # 印出前200字除錯
-    except Exception as e:
-        await msg.edit(content=f"❌ 系統錯誤: {str(e)}")
-        print(f"Error: {e}")
+    await bot.process_commands(message)
+
 
 @bot.event
 async def on_ready():
-    print(f"Bot is ready: {bot.user}")
+    logger.info("[startup] Bot is ready: %s (id=%s)", bot.user, bot.user.id if bot.user else "unknown")
+
 
 if __name__ == "__main__":
-    if DISCORD_TOKEN:
-        bot.run(DISCORD_TOKEN)
+    logger.info("[startup] booting auth-bot")
+    if not DISCORD_TOKEN:
+        present_keys = [k for k in ("DISCORD_TOKEN", "DISCORD_BOT_TOKEN", "discord_token") if os.getenv(k)]
+        logger.error("[startup] DISCORD_TOKEN is missing. Bot will not start. Checked keys=DISCORD_TOKEN/DISCORD_BOT_TOKEN/discord_token, present=%s", present_keys)
+        raise SystemExit(1)
+    logger.info("[startup] DISCORD_TOKEN detected, starting Discord client")
+    bot.run(DISCORD_TOKEN)
