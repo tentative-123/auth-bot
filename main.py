@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
@@ -22,6 +23,9 @@ else:
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logger = logging.getLogger("auth-bot")
 
 
 class ConfirmView(View):
@@ -112,11 +116,15 @@ async def on_message(message: discord.Message):
     m = re.fullmatch(r"a(\d{4,6})", content)
     if m:
         stock_code = m.group(1)
-        loading = await message.channel.send(f"🔎 正在篩選 {stock_code} 的認購權證，請稍候...")
+        logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
+        loading = await message.channel.send("最佳權證查詢中⏳ ~")
         try:
+            logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
             result = fetch_warrant_results(stock_code)
+            logger.info("[warrant-cmd] fetch done: stock=%s source=%s total_found=%s", stock_code, result.get("source"), result.get("total_found"))
             warrants = result.get("warrants", [])
             if not warrants:
+                logger.info("[warrant-cmd] no result: stock=%s source=%s", stock_code, result.get("source", "none"))
                 await loading.edit(content=f"找不到 `{stock_code}` 可用權證資料（來源：{result.get('source', 'none')}）。")
                 return
 
@@ -140,7 +148,9 @@ async def on_message(message: discord.Message):
                     inline=False,
                 )
             await loading.edit(content="", embed=embed)
+            logger.info("[warrant-cmd] response sent: stock=%s count=%d", stock_code, len(warrants[:10]))
         except Exception as e:
+            logger.exception("[warrant-cmd] failed: stock=%s", stock_code)
             await loading.edit(content=f"❌ 指令執行失敗：{e}")
         return
 
