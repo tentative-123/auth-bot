@@ -92,6 +92,7 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
 def render_warrant_card_image(stock_code: str, result: dict) -> str:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
 
     html_content = build_warrant_html(stock_code, result)
     tmp_dir = tempfile.mkdtemp(prefix="warrant-card-")
@@ -100,11 +101,18 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     html_path.write_text(html_content, encoding="utf-8")
 
     opts = Options()
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        opts.binary_location = chrome_bin
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--window-size=840,1500")
-    driver = webdriver.Chrome(options=opts)
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-software-rasterizer")
+    driver_path = os.getenv("CHROMEDRIVER_PATH")
+    service = Service(executable_path=driver_path) if driver_path else Service()
+    driver = webdriver.Chrome(service=service, options=opts)
     try:
         driver.get(f"file://{os.path.abspath(html_path)}")
         driver.save_screenshot(str(png_path))
