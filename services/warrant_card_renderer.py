@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+from glob import glob
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -12,12 +13,24 @@ def _pick_font(size: int):
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
+
+    # Nix/Railway paths are often under /nix/store/*
+    candidates.extend(glob('/nix/store/*noto-fonts-cjk*/share/fonts/opentype/noto/*.ttc'))
+    candidates.extend(glob('/nix/store/*noto-fonts-cjk*/share/fonts/opentype/noto/*.otf'))
+    candidates.extend(glob('/nix/store/*dejavu-fonts*/share/fonts/truetype/*.ttf'))
+
+    seen = set()
     for fp in candidates:
+        if not fp or fp in seen:
+            continue
+        seen.add(fp)
         if os.path.isfile(fp):
             try:
                 return ImageFont.truetype(fp, size)
             except Exception:
                 continue
+
+    # final fallback: default bitmap font (small / no CJK)
     return ImageFont.load_default()
 
 
@@ -64,36 +77,36 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     source = result.get("source", "N/A")
     total_found = result.get("total_found", 0)
 
-    W, H = 1800, 2400
+    W, H = 1200, 1700
     img = Image.new("RGB", (W, H), (219, 230, 235))
     draw = ImageDraw.Draw(img)
 
-    f_title = _pick_font(96)
-    f_meta = _pick_font(72)
-    f_sub = _pick_font(50)
-    f_th = _pick_font(42)
-    f_row1 = _pick_font(48)
-    f_row2 = _pick_font(42)
-    f_foot = _pick_font(42)
+    f_title = _pick_font(72)
+    f_meta = _pick_font(54)
+    f_sub = _pick_font(38)
+    f_th = _pick_font(34)
+    f_row1 = _pick_font(38)
+    f_row2 = _pick_font(32)
+    f_foot = _pick_font(30)
 
     card_x, card_y = 20, 20
     card_w, card_h = W - 28, H - 28
     draw.rounded_rectangle((card_x, card_y, card_x + card_w, card_y + card_h), radius=14, fill=(229, 242, 247), outline=(150, 179, 192), width=2)
-    draw.rectangle((card_x + 1, card_y + 1, card_x + card_w - 1, card_y + 270), fill=(211, 236, 246))
+    draw.rectangle((card_x + 1, card_y + 1, card_x + card_w - 1, card_y + 210), fill=(211, 236, 246))
 
-    draw.text((50, 48), "🎯 認購權證篩選", font=f_title, fill=(13, 77, 123))
+    draw.text((40, 34), "🎯 認購權證篩選", font=f_title, fill=(13, 77, 123))
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
-    draw.text((50, 134), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
-    draw.text((50, 210), f"⚡ {source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
+    draw.text((40, 92), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
+    draw.text((40, 146), f"⚡ {source}・依筆數排序・共 {total_found} 筆", font=f_sub, fill=(78, 140, 176))
 
-    col_x = [50, 820, 1080, 1310, 1540]
+    col_x = [40, 560, 740, 900, 1040]
     headers = ["量", "天數", "價外 %", "差槓比", "槓桿"]
-    y0 = 315
+    y0 = 245
     for i,h in enumerate(headers):
         draw.text((col_x[i], y0), h, font=f_th, fill=(122, 138, 147))
 
-    y = 380
-    row_h = 180
+    y = 300
+    row_h = 125
     for w in warrants:
         draw.line((card_x+12, y-8, card_x+card_w-12, y-8), fill=(199,220,229), width=1)
         code = str(w.get("code", ""))
@@ -105,23 +118,23 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         lev = w.get("lev")
 
         draw.text((col_x[0], y), f"{code} {name}", font=f_row1, fill=(36, 63, 119))
-        _dot(draw, col_x[0], y+72, _vol_color(vol))
-        draw.text((col_x[0]+34, y+58), f"{int(vol):,}張", font=f_row2, fill=(47, 159, 83))
+        _dot(draw, col_x[0], y+50, _vol_color(vol))
+        draw.text((col_x[0]+30, y+44), f"{int(vol):,}張", font=f_row2, fill=(47, 159, 83))
 
-        _dot(draw, col_x[1], y+100, _day_color(days)); draw.text((col_x[1]+24, y+10), f"{days}天", font=f_row2, fill=(29, 53, 80))
-        _dot(draw, col_x[2], y+100, _otm_color(otm)); draw.text((col_x[2]+24, y+10), otm, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[1], y+14, _day_color(days)); draw.text((col_x[1]+28, y+6), f"{days}天", font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[2], y+14, _otm_color(otm)); draw.text((col_x[2]+28, y+6), otm, font=f_row2, fill=(29, 53, 80))
         dj_text = "-" if dj is None else f"{dj:.2f}%"
-        _dot(draw, col_x[3], y+100, _dj_color(dj)); draw.text((col_x[3]+24, y+10), dj_text, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[3], y+14, _dj_color(dj)); draw.text((col_x[3]+28, y+6), dj_text, font=f_row2, fill=(29, 53, 80))
         lev_text = "-" if lev is None else f"{lev}x"
-        _dot(draw, col_x[4], y+100, _lev_color(lev)); draw.text((col_x[4]+24, y+10), lev_text, font=f_row2, fill=(29, 53, 80))
+        _dot(draw, col_x[4], y+14, _lev_color(lev)); draw.text((col_x[4]+28, y+6), lev_text, font=f_row2, fill=(29, 53, 80))
         y += row_h
 
     draw.line((card_x+12, card_y+card_h-95, card_x+card_w-12, card_y+card_h-95), fill=(188,211,221), width=2)
     foot = ["量≥500", "90-180天", "外≤10%", "槓≤5x"]
-    x = 40
+    x = 34
     for t in foot:
-        draw.text((x, card_y+card_h-78), t, font=f_foot, fill=(90, 165, 112))
-        x += 420
+        draw.text((x, card_y+card_h-68), t, font=f_foot, fill=(90, 165, 112))
+        x += 280
 
     tmp = tempfile.mkdtemp(prefix='warrant-card-')
     out = Path(tmp) / f"warrant_{stock_code}.png"
