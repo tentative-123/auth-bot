@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 
 import analysis
 from services.warrant_screener import fetch_warrant_results
+from services.warrant_card_renderer import render_warrant_card_image
 
 DISCORD_TOKEN = (
     os.getenv("DISCORD_TOKEN")
@@ -136,27 +137,11 @@ async def on_message(message: discord.Message):
                 await loading.edit(content=f"找不到 `{stock_code}` 可用權證資料（來源：{result.get('source', 'none')}）。")
                 return
 
-            embed = discord.Embed(
-                title=f"{stock_code} 認購權證清單",
-                description=(
-                    f"來源：{result.get('source', 'N/A')}｜"
-                    f"母股價：{result.get('stock_price') or 'N/A'}｜"
-                    f"符合筆數：{result.get('total_found', 0)}"
-                ),
-                color=discord.Color.blue(),
-            )
-            for idx, w in enumerate(warrants[:10], start=1):
-                embed.add_field(
-                    name=f"#{idx} {w.get('code', 'N/A')} {w.get('name', '')}",
-                    value=(
-                        f"天數: {w.get('days', 'N/A')}｜OTM: {w.get('otm_str', 'N/A')}\n"
-                        f"價: {w.get('price', 0)}｜量: {w.get('volume', 0)}\n"
-                        f"槓桿: {w.get('lev', 'N/A')}｜分數: {w.get('_score', 'N/A')}"
-                    ),
-                    inline=False,
-                )
-            await loading.edit(content="", embed=embed)
-            logger.info("[warrant-cmd] response sent: stock=%s count=%d", stock_code, len(warrants[:10]))
+            image_path = render_warrant_card_image(stock_code, result)
+            card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
+            await loading.edit(content="")
+            await message.channel.send(file=card_file)
+            logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
         except Exception as e:
             logger.exception("[warrant-cmd] failed: stock=%s", stock_code)
             await loading.edit(content=f"❌ 指令執行失敗：{e}")
