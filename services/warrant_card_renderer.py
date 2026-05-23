@@ -58,7 +58,7 @@ def build_warrant_html(stock_code: str, result: dict) -> str:
 <meta charset='utf-8'>
 <style>
   body {{ margin: 0; padding: 12px; background: #edf5f7; font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; }}
-  .card {{ background:#e5f2f7; border:1px solid #b8d2dc; border-radius:10px; padding:14px; width:760px; }}
+  .card { background:#e5f2f7; border:1px solid #b8d2dc; border-radius:10px; padding:14px; width:760px; color:#163447; }
   .title {{ font-size:34px; font-weight:800; color:#0f4f7d; }}
   .meta {{ font-size:38px; color:#2f6fa0; font-weight:700; margin-top:8px; }}
   .submeta {{ margin-top:6px; font-size:24px; color:#4b88ad; font-weight:700; }}
@@ -105,6 +105,10 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    import time
 
     html_content = build_warrant_html(stock_code, result)
     tmp_dir = tempfile.mkdtemp(prefix="warrant-card-")
@@ -127,7 +131,15 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     driver = webdriver.Chrome(service=service, options=opts)
     try:
         driver.get(f"file://{os.path.abspath(html_path)}")
-        driver.save_screenshot(str(png_path))
+        wait = WebDriverWait(driver, 10)
+        card = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".card")))
+        try:
+            driver.execute_script("return document.fonts && document.fonts.ready ? document.fonts.ready : null")
+        except Exception:
+            pass
+        time.sleep(0.3)
+        png_bytes = card.screenshot_as_png
+        Path(png_path).write_bytes(png_bytes)
     finally:
         driver.quit()
 
