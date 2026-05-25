@@ -105,14 +105,17 @@ def _get_realtime(code: str, market: str = "tse") -> dict | None:
         item = requests.get(url, headers=_BASE_HDR, timeout=8).json()["msgArray"][0]
         z_raw = item.get("z", "-")
         y_raw = item.get("y", "0")
-        price = _sf(z_raw) or _sf(y_raw) or 0
+        last_price = _sf(z_raw) or 0
+        prev_close = _sf(y_raw) or 0
+        price = last_price or prev_close or 0
 
         def _pl(s): return [float(x) for x in s.split("_") if x not in ("-", "")]
         def _il(s): return [int(float(x)) for x in s.split("_") if x not in ("-", "")]
 
         return {
             "price": price,
-            "prev_close": _sf(y_raw) or 0,
+            "last_price": last_price,
+            "prev_close": prev_close,
             "volume": _si(item.get("v", "0")),
             "bid_prices": _pl(item.get("b", ""))[:5],
             "bid_sizes": _il(item.get("g", ""))[:5],
@@ -363,11 +366,20 @@ def fetch_warrant_results(stock_code: str) -> dict:
         if rt:
             if rt.get("volume"):
                 w["volume"] = rt["volume"]
-            today_px = rt.get("price") or 0
+            today_px = rt.get("last_price") or 0
             prev_px = rt.get("prev_close") or 0
             if intraday and prev_px:
                 w["price"] = prev_px
-                w["price_today"] = today_px
+                if today_px > 0:
+                    w["price_today"] = today_px
+                elif rt.get("bid_prices") and rt.get("ask_prices"):
+                    w["price_today"] = round((rt["bid_prices"][0] + rt["ask_prices"][0]) / 2, 2)
+                elif rt.get("bid_prices"):
+                    w["price_today"] = rt["bid_prices"][0]
+                elif rt.get("ask_prices"):
+                    w["price_today"] = rt["ask_prices"][0]
+                else:
+                    w["price_today"] = None
             else:
                 w["price"] = today_px or prev_px
                 w["price_today"] = today_px
