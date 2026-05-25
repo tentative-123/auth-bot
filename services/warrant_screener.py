@@ -382,7 +382,16 @@ def fetch_warrant_results(stock_code: str) -> dict:
                     w["price_today"] = None
             else:
                 w["price"] = today_px or prev_px
-                w["price_today"] = today_px
+                if today_px > 0:
+                    w["price_today"] = today_px
+                elif rt.get("bid_prices") and rt.get("ask_prices"):
+                    w["price_today"] = round((rt["bid_prices"][0] + rt["ask_prices"][0]) / 2, 2)
+                elif rt.get("bid_prices"):
+                    w["price_today"] = rt["bid_prices"][0]
+                elif rt.get("ask_prices"):
+                    w["price_today"] = rt["ask_prices"][0]
+                else:
+                    w["price_today"] = None
             w["bid_px"] = rt["bid_prices"][0] if rt["bid_prices"] else w.get("bid_px", 0)
             w["ask_px"] = rt["ask_prices"][0] if rt["ask_prices"] else w.get("ask_px", 0)
         time.sleep(0.15)
