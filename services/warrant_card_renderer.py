@@ -114,6 +114,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     f_th, _ = _pick_font(38)
     f_row1, _ = _pick_font(44)
     f_row2, _ = _pick_font(36)
+    f_row3, _ = _pick_font(28)
     f_foot, _ = _pick_font(34)
 
     card_x, card_y = 20, 20
@@ -133,7 +134,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     draw.text((card_x + card_w - notice_w - 16, card_y + 8), notice, font=f_notice, fill=(77, 109, 126))
 
     col_x = [46, 700, 900, 1070, 1240, 1410]
-    headers = ["量", "現價", "天數", "價外 %", "差槓比", "槓桿"]
+    headers = ["量", "昨收/現價", "天數", "價外 %", "差槓比", "槓桿"]
     y0 = 334
     for i, h in enumerate(headers):
         draw.text((col_x[i], y0), h, font=f_th, fill=(60, 60, 60))
@@ -146,6 +147,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         name = str(w.get("name", ""))
         vol = float(w.get("volume", 0) or 0)
         price = w.get("price")
+        price_today = w.get("price_today")
         days = int(w.get("days", 0) or 0)
         otm = str(w.get("otm_str", "-"))
         dj = w.get("dj_ratio")
@@ -155,8 +157,10 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         _dot(draw, col_x[0], y + 64, _vol_color(vol))
         draw.text((col_x[0] + 34, y + 56), f"{int(vol):,}張", font=f_row2, fill=(35, 35, 35))
 
-        price_text = "-" if price is None else f"{float(price):.2f}"
-        draw.text((col_x[1], y + 8), price_text, font=f_row2, fill=(35, 35, 35))
+        price_yday_text = "-" if price is None else f"{float(price):.2f}"
+        price_today_text = "-" if price_today is None else f"{float(price_today):.2f}"
+        draw.text((col_x[1], y + 0), f"昨{price_yday_text}", font=f_row2, fill=(35, 35, 35))
+        draw.text((col_x[1], y + 48), f"今{price_today_text}", font=f_row3, fill=(90, 90, 90))
         _dot(draw, col_x[2], y + 18, _day_color(days)); draw.text((col_x[2] + 32, y + 8), f"{days}天", font=f_row2, fill=(35, 35, 35))
         _dot(draw, col_x[3], y + 18, _otm_color(otm)); draw.text((col_x[3] + 32, y + 8), otm, font=f_row2, fill=(35, 35, 35))
         dj_text = "-" if dj is None else f"{dj:.2f}%"
