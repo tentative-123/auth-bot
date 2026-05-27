@@ -104,7 +104,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     total_found = result.get("total_found", 0)
     intraday = bool(result.get("intraday", False))
 
-    W, H = 1600, 2200
+    W, H = 1600, 2320
     img = Image.new("RGB", (W, H), (219, 230, 235))
     draw = ImageDraw.Draw(img)
 
