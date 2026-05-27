@@ -396,7 +396,16 @@ def fetch_warrant_results(stock_code: str) -> dict:
             w["ask_px"] = rt["ask_prices"][0] if rt["ask_prices"] else w.get("ask_px", 0)
         time.sleep(0.15)
 
+    liquid_candidates = []
     for w in candidates[:n_fetch]:
+        if intraday:
+            bid_px_chk = w.get("bid_px", 0) or 0
+            ask_px_chk = w.get("ask_px", 0) or 0
+            if bid_px_chk <= 0 or ask_px_chk <= 0:
+                continue
+        liquid_candidates.append(w)
+
+    for w in liquid_candidates:
         T = w["days"] / 365.0
         wp = w.get("price", 0) or 0
         sigma = w.get("sigma") or hv
@@ -420,6 +429,6 @@ def fetch_warrant_results(stock_code: str) -> dict:
         use_vol = w.get("vol_from_api", False) or not intraday
         w["_score"] = _warrant_score(w, use_volume=use_vol)
 
-    scored = sorted(candidates[:n_fetch], key=lambda x: x.get("_score", 0), reverse=True)
+    scored = sorted(liquid_candidates, key=lambda x: x.get("_score", 0), reverse=True)
     top = scored[:TOP_N]
     return {"stock_price": S, "warrants": top, "total_found": len(candidates), "source": source, "hv": hv, "intraday": intraday}
