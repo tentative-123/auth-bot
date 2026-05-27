@@ -102,6 +102,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     stock_price = result.get("stock_price")
     source = result.get("source", "N/A")
     total_found = result.get("total_found", 0)
+    intraday = bool(result.get("intraday", False))
 
     W, H = 1600, 2200
     img = Image.new("RGB", (W, H), (219, 230, 235))
@@ -111,6 +112,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     f_meta, _ = _pick_font(56)
     f_sub, _ = _pick_font(34)
     f_notice, _ = _pick_font(30)
+    f_mode, _ = _pick_font(28)
     f_th, _ = _pick_font(38)
     f_row1, _ = _pick_font(44)
     f_row2, _ = _pick_font(36)
@@ -128,6 +130,8 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
     draw.text((46, 142), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
     draw.text((46, 232), f"依照各參數比重評分排序，符合條件共{total_found}筆", font=f_sub, fill=(35, 35, 35))
+    if intraday:
+        draw.text((46, 268), "盤中模式", font=f_mode, fill=(170, 64, 64))
     notice = "股市艾斯出品，請勿轉傳"
     notice_bbox = draw.textbbox((0, 0), notice, font=f_notice)
     notice_w = notice_bbox[2] - notice_bbox[0]
@@ -135,11 +139,11 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
 
     col_x = [46, 700, 900, 1070, 1240, 1410]
     headers = ["量", "昨收/現價", "天數", "價外 %", "差槓比", "槓桿"]
-    y0 = 334
+    y0 = 346
     for i, h in enumerate(headers):
         draw.text((col_x[i], y0), h, font=f_th, fill=(60, 60, 60))
 
-    y = 394
+    y = 406
     row_h = 175
     for w in warrants:
         draw.line((card_x + 12, y - 8, card_x + card_w - 12, y - 8), fill=(199, 220, 229), width=1)
