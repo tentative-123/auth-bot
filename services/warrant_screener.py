@@ -105,14 +105,17 @@ def _get_realtime(code: str, market: str = "tse") -> dict | None:
         item = requests.get(url, headers=_BASE_HDR, timeout=8).json()["msgArray"][0]
         z_raw = item.get("z", "-")
         y_raw = item.get("y", "0")
-        price = _sf(z_raw) or _sf(y_raw) or 0
+        last_price = _sf(z_raw) or 0
+        prev_close = _sf(y_raw) or 0
+        price = last_price or prev_close or 0
 
         def _pl(s): return [float(x) for x in s.split("_") if x not in ("-", "")]
         def _il(s): return [int(float(x)) for x in s.split("_") if x not in ("-", "")]
 
         return {
             "price": price,
-            "prev_close": _sf(y_raw) or 0,
+            "last_price": last_price,
+            "prev_close": prev_close,
             "volume": _si(item.get("v", "0")),
             "bid_prices": _pl(item.get("b", ""))[:5],
             "bid_sizes": _il(item.get("g", ""))[:5],
@@ -363,19 +366,46 @@ def fetch_warrant_results(stock_code: str) -> dict:
         if rt:
             if rt.get("volume"):
                 w["volume"] = rt["volume"]
-            today_px = rt.get("price") or 0
+            today_px = rt.get("last_price") or 0
             prev_px = rt.get("prev_close") or 0
             if intraday and prev_px:
                 w["price"] = prev_px
-                w["price_today"] = today_px
+                if today_px > 0:
+                    w["price_today"] = today_px
+                elif rt.get("bid_prices") and rt.get("ask_prices"):
+                    w["price_today"] = round((rt["bid_prices"][0] + rt["ask_prices"][0]) / 2, 2)
+                elif rt.get("bid_prices"):
+                    w["price_today"] = rt["bid_prices"][0]
+                elif rt.get("ask_prices"):
+                    w["price_today"] = rt["ask_prices"][0]
+                else:
+                    w["price_today"] = None
             else:
                 w["price"] = today_px or prev_px
-                w["price_today"] = today_px
+                if today_px > 0:
+                    w["price_today"] = today_px
+                elif rt.get("bid_prices") and rt.get("ask_prices"):
+                    w["price_today"] = round((rt["bid_prices"][0] + rt["ask_prices"][0]) / 2, 2)
+                elif rt.get("bid_prices"):
+                    w["price_today"] = rt["bid_prices"][0]
+                elif rt.get("ask_prices"):
+                    w["price_today"] = rt["ask_prices"][0]
+                else:
+                    w["price_today"] = None
             w["bid_px"] = rt["bid_prices"][0] if rt["bid_prices"] else w.get("bid_px", 0)
             w["ask_px"] = rt["ask_prices"][0] if rt["ask_prices"] else w.get("ask_px", 0)
         time.sleep(0.15)
 
+    liquid_candidates = []
     for w in candidates[:n_fetch]:
+        if intraday:
+            bid_px_chk = w.get("bid_px", 0) or 0
+            ask_px_chk = w.get("ask_px", 0) or 0
+            if bid_px_chk <= 0 or ask_px_chk <= 0:
+                continue
+        liquid_candidates.append(w)
+
+    for w in liquid_candidates:
         T = w["days"] / 365.0
         wp = w.get("price", 0) or 0
         sigma = w.get("sigma") or hv
@@ -399,6 +429,6 @@ def fetch_warrant_results(stock_code: str) -> dict:
         use_vol = w.get("vol_from_api", False) or not intraday
         w["_score"] = _warrant_score(w, use_volume=use_vol)
 
-    scored = sorted(candidates[:n_fetch], key=lambda x: x.get("_score", 0), reverse=True)
+    scored = sorted(liquid_candidates, key=lambda x: x.get("_score", 0), reverse=True)
     top = scored[:TOP_N]
     return {"stock_price": S, "warrants": top, "total_found": len(candidates), "source": source, "hv": hv, "intraday": intraday}
