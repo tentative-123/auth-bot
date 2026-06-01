@@ -130,3 +130,78 @@ python main.py
 - Bot 需要在 Discord Developer Portal 開啟 Message Content Intent，否則可能收不到一般文字訊息內容。
 - 權證即時資料依外部資料源回傳為準；若來源暫時無資料，Bot 會回覆查無可用權證或使用備援文字卡。
 - 圖卡首次產生時可能會下載中文字型檔，以確保中文能正常顯示。
+
+---
+
+## 9) Google Sheet 訂閱權限管理（選用）
+
+此 Bot 也可以選用 Google Sheet 作為訂閱審核後台。使用者填寫表單後，管理員在 Sheet 的「後台核對」欄填入 `OK`，Bot 會在指定 Discord 頻道發送確認按鈕；使用者本人點擊後，Bot 會幫他加入指定身分組，並把該使用者的 Discord ID、訂閱時間與到期日回填到 Google Sheet。
+
+### 9.1 建議 Sheet 欄位
+
+既有欄位可沿用圖片中的欄位，至少需要：
+
+- `您的 Discord (DC) 帳號名稱`
+- `後台核對`
+- `訂閱時間`
+- `到期日`
+
+Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
+
+- `Discord User ID`
+- `Bot 通知狀態`
+- `Bot 通知訊息 ID`
+- `Discord 確認時間`
+- `開通錯誤訊息`
+
+### 9.2 名稱與 ID 的處理方式
+
+目前流程允許使用者先只填 Discord 名稱。Bot 會嘗試用該名稱在 Discord 伺服器中找到會員並標記；如果名稱無法精準找到，Bot 仍會用文字顯示該名稱並請本人點擊按鈕。使用者點擊後，Bot 會把 `interaction.user.id` 回填到 `Discord User ID` 欄位，之後同一列就會以 ID 為準避免誤開。
+
+### 9.3 必要 Discord 設定
+
+- Bot 需要 `Manage Roles` 權限。
+- Bot 的最高身分組必須高於要發放的訂閱身分組。
+- 若希望 Bot 更容易用名稱找到使用者，請在 Discord Developer Portal 開啟 Server Members Intent，並確認 Bot 使用 members intent。
+
+### 9.4 必要 Google 設定
+
+1. 建立 Google Cloud Project。
+2. 啟用 Google Sheets API。
+3. 建立 Service Account。
+4. 建立 Service Account JSON key。
+5. 將 Google Sheet 分享給 Service Account email，權限設為編輯者。
+
+### 9.5 環境變數
+
+啟用此功能需要額外設定：
+
+```env
+SUBSCRIPTION_SYNC_ENABLED=true
+GOOGLE_SHEET_ID=你的 spreadsheet id
+GOOGLE_WORKSHEET_NAME=Form_Responses
+GOOGLE_SERVICE_ACCOUNT_JSON={...整份 service account json...}
+DISCORD_GUILD_ID=你的 Discord server id
+DISCORD_NOTIFY_CHANNEL_ID=要發送確認按鈕的頻道 id
+DISCORD_SUBSCRIBER_ROLE_ID=要開通的身分組 id
+SHEET_CHECK_INTERVAL_SECONDS=60
+```
+
+如果不想把 JSON 放進環境變數，也可以改用檔案路徑：
+
+```env
+GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
+```
+
+### 9.6 可調整欄位名稱
+
+如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
+
+```env
+SHEET_COL_DISCORD_NAME=您的 Discord (DC) 帳號名稱
+SHEET_COL_REVIEW=後台核對
+SHEET_COL_SUBSCRIBED_AT=訂閱時間
+SHEET_COL_EXPIRES_AT=到期日
+SHEET_COL_DISCORD_ID=Discord User ID
+SHEET_APPROVED_VALUES=OK,ok,通過,已核對
+```

@@ -5,6 +5,7 @@ import logging
 import discord
 from discord.ext import commands
 
+from services.subscription_manager import SubscriptionManager
 from services.warrant_screener import fetch_warrant_results
 from services.warrant_card_renderer import render_warrant_card_image
 
@@ -16,7 +17,9 @@ DISCORD_TOKEN = (
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 bot = commands.Bot(command_prefix="$", intents=intents)
+subscription_manager = SubscriptionManager(bot)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("auth-bot")
@@ -97,8 +100,15 @@ async def on_message(message: discord.Message):
 
 
 @bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if await subscription_manager.handle_interaction(interaction):
+        return
+
+
+@bot.event
 async def on_ready():
     logger.info("[startup] Bot is ready: %s (id=%s)", bot.user, bot.user.id if bot.user else "unknown")
+    subscription_manager.start()
 
 
 if __name__ == "__main__":
