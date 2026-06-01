@@ -24,6 +24,15 @@ subscription_manager = SubscriptionManager(bot)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("auth-bot")
 
+def _warrant_allowed_channel_ids() -> set[int]:
+    raw = os.getenv("WARRANT_ALLOWED_CHANNEL_IDS", "").strip()
+    return {int(item.strip()) for item in raw.split(",") if item.strip().isdigit()}
+
+
+def _is_warrant_channel_allowed(channel_id: int) -> bool:
+    allowed_ids = _warrant_allowed_channel_ids()
+    return not allowed_ids or channel_id in allowed_ids
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -43,6 +52,9 @@ async def on_message(message: discord.Message):
 
     m = re.fullmatch(r"a(\d{4,6})", content)
     if m:
+        if not _is_warrant_channel_allowed(message.channel.id):
+            logger.info("[warrant-cmd] ignored outside allowed channel: user=%s channel=%s", message.author.id, message.channel.id)
+            return
         stock_code = m.group(1)
         logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
         loading = await message.channel.send("最佳權證查詢中⏳ ~")

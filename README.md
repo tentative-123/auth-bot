@@ -156,7 +156,7 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 
 ### 9.2 名稱與 ID 的處理方式
 
-目前流程允許使用者先只填 Discord 名稱。Bot 會嘗試用該名稱在 Discord 伺服器中找到會員並標記；如果名稱無法精準找到，Bot 仍會用文字顯示該名稱並請本人點擊按鈕。使用者點擊後，Bot 會把 `interaction.user.id` 回填到 `Discord User ID` 欄位，之後同一列就會以 ID 為準避免誤開。
+目前流程允許使用者先只填 Discord 名稱。Bot 會嘗試用該名稱在 Discord 伺服器中找到會員並標記；如果名稱無法精準找到，Bot 仍會用文字顯示該名稱並請本人點擊按鈕。使用者點擊後，Bot 會先比對點擊者 Discord 名稱與表單名稱；通過後才會把 `interaction.user.id` 回填到 `Discord User ID` 欄位，之後同一列就會以 ID 為準避免誤開。
 
 ### 9.3 必要 Discord 設定
 
@@ -164,7 +164,29 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 - Bot 的最高身分組必須高於要發放的訂閱身分組。
 - 若希望 Bot 更容易用名稱找到使用者，請在 Discord Developer Portal 開啟 Server Members Intent，並確認 Bot 使用 members intent。
 
-### 9.4 必要 Google 設定
+### 9.4 通知頻道與隱私
+
+Discord 一般頻道訊息無法設定成「只有被標記的人可見」；只有互動回覆可以是 ephemeral（僅點擊者可見）。如果開通提示要更私密，可以設定：
+
+```env
+SUBSCRIPTION_NOTIFY_MODE=dm
+```
+
+此模式會優先私訊找到的使用者並附上開通按鈕；如果 Bot 找不到該名稱或使用者關閉私訊，才會退回 `DISCORD_NOTIFY_CHANNEL_ID` 指定的頻道發送。建議把 `DISCORD_NOTIFY_CHANNEL_ID` 設成「驗證/開通」用公開或半公開頻道，而不是訂閱會員專屬頻道，因為未訂閱者還看不到會員頻道。
+
+---
+
+### 9.5 權證查詢頻道限制
+
+如果不希望公開頻道也能使用權證查詢，可以設定：
+
+```env
+WARRANT_ALLOWED_CHANNEL_IDS=頻道ID1,頻道ID2
+```
+
+設定後，`a2330` 這類權證查詢只會在列出的頻道生效；未設定時則維持所有 Bot 可讀頻道都可使用。
+
+### 9.6 必要 Google 設定
 
 1. 建立 Google Cloud Project。
 2. 啟用 Google Sheets API。
@@ -172,7 +194,7 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 4. 建立 Service Account JSON key。
 5. 將 Google Sheet 分享給 Service Account email，權限設為編輯者。
 
-### 9.5 環境變數
+### 9.7 環境變數
 
 啟用此功能需要額外設定：
 
@@ -185,6 +207,7 @@ DISCORD_GUILD_ID=你的 Discord server id
 DISCORD_NOTIFY_CHANNEL_ID=要發送確認按鈕的頻道 id
 DISCORD_SUBSCRIBER_ROLE_ID=要開通的身分組 id
 SHEET_CHECK_INTERVAL_SECONDS=60
+SUBSCRIPTION_NOTIFY_MODE=channel
 ```
 
 如果不想把 JSON 放進環境變數，也可以改用檔案路徑：
@@ -195,7 +218,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
 
 > `GOOGLE_WORKSHEET_NAME` 必須填 Google Sheet 底部分頁的「工作表分頁名稱」，不是表單回應表格左上角的表格名稱。若 Railway log 出現 `WorksheetNotFound: Form_Responses`，請到試算表底部分頁確認實際名稱，常見可能是 `表單回應 1`、`Form Responses 1`，或你自行改名後的名稱；也可以把 `GOOGLE_WORKSHEET_NAME` 留空，Bot 會使用第一個工作表分頁。
 
-### 9.6 可調整欄位名稱
+### 9.8 可調整欄位名稱
 
 如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
 

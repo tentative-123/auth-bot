@@ -23,7 +23,7 @@ def _normalize_discord_name(value: str) -> str:
     return normalized
 
 
-def _member_name_candidates(member: discord.Member) -> set[str]:
+def _member_name_candidates(member: discord.Member | discord.User) -> set[str]:
     candidates = {member.name, member.display_name, str(member)}
     global_name = getattr(member, "global_name", None)
     if global_name:
@@ -40,6 +40,7 @@ class SubscriptionManager:
         self.role_id = int(os.getenv("DISCORD_SUBSCRIBER_ROLE_ID", "0") or 0)
         self.check_interval = int(os.getenv("SHEET_CHECK_INTERVAL_SECONDS", "60") or 60)
         self.discord_name_col = os.getenv("SHEET_COL_DISCORD_NAME", "您的 Discord (DC) 帳號名稱").strip()
+        self.notify_mode = os.getenv("SUBSCRIPTION_NOTIFY_MODE", "channel").strip().lower()
         self.sheet: SubscriptionSheet | None = None
 
     def start(self):
@@ -96,6 +97,10 @@ class SubscriptionManager:
         view.add_item(button)
         return view
 
+    def _user_matches_sheet_name(self, user: discord.Member | discord.User, discord_name: str) -> bool:
+        target = _normalize_discord_name(discord_name)
+        return bool(target and target in _member_name_candidates(user))
+
     async def _find_member_by_sheet_name(self, guild: discord.Guild, discord_name: str) -> discord.Member | None:
         target = _normalize_discord_name(discord_name)
         if not target:
@@ -115,15 +120,27 @@ class SubscriptionManager:
         if guild is None or channel is None:
             raise RuntimeError("Discord guild/channel not found; check DISCORD_GUILD_ID and DISCORD_NOTIFY_CHANNEL_ID")
         member = await self._find_member_by_sheet_name(guild, discord_name)
-        mention = member.mention if member else f"@{discord_name}"
-        note = "請點擊下方按鈕完成 Discord 權限開通。"
-        if member is None:
-            note += "\n（Bot 目前無法用名稱精準標記你；請本人點擊，系統會記錄你的 Discord ID。）"
-        message = await channel.send(
-            f"{mention} 你的訂閱資料已完成後台核對。\n{note}",
-            view=self._build_confirm_view(row_number),
-            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
-        )
+        view = self._build_confirm_view(row_number)
+        note = "你的訂閱資料已完成後台核對，請點擊下方按鈕完成 Discord 權限開通。"
+
+        message = None
+        if self.notify_mode == "dm" and member:
+            try:
+                message = await member.send(note, view=view)
+            except discord.Forbidden:
+                logger.info("[subscription] dm disabled, falling back to notify channel: member=%s row=%s", member.id, row_number)
+
+        if message is None:
+            mention = member.mention if member else f"@{discord_name}"
+            if member is None:
+                note += "\n（Bot 目前無法用名稱精準標記你；請本人點擊，系統會比對你填寫的 Discord 名稱並記錄你的 Discord ID。）"
+            elif self.notify_mode == "dm":
+                note += "\n（因為無法私訊此使用者，改在此頻道發送確認按鈕。）"
+            message = await channel.send(
+                f"{mention} {note}",
+                view=view,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+            )
         await asyncio.to_thread(self._mark_notified_sync, row_number, message.id)
 
     @tasks.loop(seconds=60)
@@ -155,6 +172,11 @@ class SubscriptionManager:
             existing_discord_id = str(row.values.get(self._sheet().discord_id_col, "")).strip()
             if existing_discord_id and existing_discord_id != str(interaction.user.id):
                 await interaction.followup.send("❌ 這筆訂閱資料已綁定其他 Discord 帳號，請聯絡管理員。", ephemeral=True)
+                return True
+
+            discord_name = str(row.values.get(self.discord_name_col, "")).strip()
+            if not existing_discord_id and not self._user_matches_sheet_name(interaction.user, discord_name):
+                await interaction.followup.send("❌ 你的 Discord 名稱與表單填寫資料不一致，請聯絡管理員協助確認。", ephemeral=True)
                 return True
 
             guild = self.bot.get_guild(self.guild_id)
