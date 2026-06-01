@@ -6,6 +6,7 @@ from typing import Any
 
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import WorksheetNotFound
 
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
@@ -53,7 +54,21 @@ class SubscriptionSheet:
             raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS is required")
 
         client = gspread.authorize(credentials)
-        return client.open_by_key(self.sheet_id).worksheet(self.worksheet_name)
+        spreadsheet = client.open_by_key(self.sheet_id)
+        worksheets = spreadsheet.worksheets()
+        if not self.worksheet_name:
+            if not worksheets:
+                raise RuntimeError("Spreadsheet has no worksheets")
+            return worksheets[0]
+        try:
+            return spreadsheet.worksheet(self.worksheet_name)
+        except WorksheetNotFound as exc:
+            available = ", ".join(ws.title for ws in worksheets) or "<none>"
+            raise RuntimeError(
+                f"Worksheet '{self.worksheet_name}' was not found. "
+                f"Set GOOGLE_WORKSHEET_NAME to the exact sheet tab name. "
+                f"Available worksheets: {available}"
+            ) from exc
 
     def _ensure_headers(self) -> list[str]:
         headers = self.worksheet.row_values(1)

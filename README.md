@@ -193,6 +193,8 @@ SHEET_CHECK_INTERVAL_SECONDS=60
 GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
 ```
 
+> `GOOGLE_WORKSHEET_NAME` 必須填 Google Sheet 底部分頁的「工作表分頁名稱」，不是表單回應表格左上角的表格名稱。若 Railway log 出現 `WorksheetNotFound: Form_Responses`，請到試算表底部分頁確認實際名稱，常見可能是 `表單回應 1`、`Form Responses 1`，或你自行改名後的名稱；也可以把 `GOOGLE_WORKSHEET_NAME` 留空，Bot 會使用第一個工作表分頁。
+
 ### 9.6 可調整欄位名稱
 
 如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
