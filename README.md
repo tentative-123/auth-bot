@@ -205,7 +205,16 @@ Bot 會掃描已開通且有 `Discord User ID` / `到期日` 的列，並在到�
 - 如果原到期日仍在今天或未來：新到期日 = 原到期日 + 3 個月。
 - 如果已經過期或找不到既有到期日：新到期日 = 本次確認時間 + 3 個月。
 
-### 9.7 必要 Google 設定
+
+### 9.7 手動延長指定用戶期限
+
+可以直接在 Google Sheet 手動修改該用戶最新一筆 `到期日` 欄位，格式建議使用 `YYYY-MM-DD`，例如 `2026-09-15`。Bot 的到期提醒與續約延展都會讀取 Sheet 目前的 `到期日`：
+
+- 手動改晚一點：系統會以新的日期作為提醒與續約基準。
+- 用戶未過期前續約：新到期日會從目前最新的 `到期日` 再加 3 個月。
+- 修改後若不想讓同一階段提醒再次發送，請保留對應的 `到期前14天提醒` / `到期前7天提醒` / `到期前3天提醒` 欄位；若想重新提醒，才清空對應欄位。
+
+### 9.8 必要 Google 設定
 
 1. 建立 Google Cloud Project。
 2. 啟用 Google Sheets API。
@@ -213,7 +222,7 @@ Bot 會掃描已開通且有 `Discord User ID` / `到期日` 的列，並在到�
 4. 建立 Service Account JSON key。
 5. 將 Google Sheet 分享給 Service Account email，權限設為編輯者。
 
-### 9.8 環境變數
+### 9.9 環境變數
 
 啟用此功能需要額外設定：
 
@@ -237,7 +246,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
 
 > `GOOGLE_WORKSHEET_NAME` 必須填 Google Sheet 底部分頁的「工作表分頁名稱」，不是表單回應表格左上角的表格名稱。若 Railway log 出現 `WorksheetNotFound: Form_Responses`，請到試算表底部分頁確認實際名稱，常見可能是 `表單回應 1`、`Form Responses 1`，或你自行改名後的名稱；也可以把 `GOOGLE_WORKSHEET_NAME` 留空，Bot 會使用第一個工作表分頁。
 
-### 9.9 可調整欄位名稱
+### 9.10 可調整欄位名稱
 
 如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
 

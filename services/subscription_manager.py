@@ -130,7 +130,10 @@ class SubscriptionManager:
             raise RuntimeError("Discord guild/channel not found; check DISCORD_GUILD_ID and DISCORD_NOTIFY_CHANNEL_ID")
         member = await self._find_member_by_sheet_name(guild, discord_name)
         view = self._build_confirm_view(row_number)
-        note = "你的訂閱資料已完成後台核對，請點擊下方按鈕完成 Discord 權限開通。"
+        note = (
+            "【股市艾斯權證系統】你的訂閱資料已完成後台核對，請點擊下方按鈕完成 Discord 權限開通。\n"
+            "本系統是以波段籌碼為主的輔助策略工具；使用上有任何問題，都歡迎在討論區詢問艾斯~"
+        )
 
         message = None
         if self.notify_mode == "dm" and member:
