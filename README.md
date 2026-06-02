@@ -153,6 +153,9 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 - `Bot 通知訊息 ID`
 - `Discord 確認時間`
 - `開通錯誤訊息`
+- `到期前14天提醒`
+- `到期前7天提醒`
+- `到期前3天提醒`
 
 ### 9.2 名稱與 ID 的處理方式
 
@@ -186,7 +189,23 @@ WARRANT_ALLOWED_CHANNEL_IDS=頻道ID1,頻道ID2
 
 設定後，`a2330` 這類權證查詢只會在列出的頻道生效；未設定時則維持所有 Bot 可讀頻道都可使用。
 
-### 9.6 必要 Google 設定
+
+### 9.6 續約與到期提醒
+
+Bot 會掃描已開通且有 `Discord User ID` / `到期日` 的列，並在到期前自動提醒：
+
+- 到期前 14 天
+- 到期前 7 天
+- 到期前 3 天
+
+提醒會優先私訊使用者；若私訊失敗，會退回 `DISCORD_NOTIFY_CHANNEL_ID` 指定頻道標記提醒。每個提醒階段送出後，Bot 會把送出時間寫入對應欄位，避免重複提醒。
+
+續約時，使用者填寫同一份表單，管理員一樣在新列的 `後台核對` 填 `OK`。使用者點擊新列的確認按鈕後，Bot 會尋找該 Discord ID（或同名資料）既有的最新 `到期日`：
+
+- 如果原到期日仍在今天或未來：新到期日 = 原到期日 + 3 個月。
+- 如果已經過期或找不到既有到期日：新到期日 = 本次確認時間 + 3 個月。
+
+### 9.7 必要 Google 設定
 
 1. 建立 Google Cloud Project。
 2. 啟用 Google Sheets API。
@@ -194,7 +213,7 @@ WARRANT_ALLOWED_CHANNEL_IDS=頻道ID1,頻道ID2
 4. 建立 Service Account JSON key。
 5. 將 Google Sheet 分享給 Service Account email，權限設為編輯者。
 
-### 9.7 環境變數
+### 9.8 環境變數
 
 啟用此功能需要額外設定：
 
@@ -218,7 +237,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
 
 > `GOOGLE_WORKSHEET_NAME` 必須填 Google Sheet 底部分頁的「工作表分頁名稱」，不是表單回應表格左上角的表格名稱。若 Railway log 出現 `WorksheetNotFound: Form_Responses`，請到試算表底部分頁確認實際名稱，常見可能是 `表單回應 1`、`Form Responses 1`，或你自行改名後的名稱；也可以把 `GOOGLE_WORKSHEET_NAME` 留空，Bot 會使用第一個工作表分頁。
 
-### 9.8 可調整欄位名稱
+### 9.9 可調整欄位名稱
 
 如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
 
@@ -228,5 +247,8 @@ SHEET_COL_REVIEW=後台核對
 SHEET_COL_SUBSCRIBED_AT=訂閱時間
 SHEET_COL_EXPIRES_AT=到期日
 SHEET_COL_DISCORD_ID=Discord User ID
+SHEET_COL_REMINDER_14=到期前14天提醒
+SHEET_COL_REMINDER_7=到期前7天提醒
+SHEET_COL_REMINDER_3=到期前3天提醒
 SHEET_APPROVED_VALUES=OK,ok,通過,已核對
 ```

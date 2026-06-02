@@ -1,7 +1,8 @@
 import json
 import os
+import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import gspread
@@ -17,6 +18,35 @@ class SubscriptionRow:
     values: dict[str, Any]
 
 
+@dataclass
+class RenewalReminder:
+    row: SubscriptionRow
+    days_left: int
+    reminder_col: str
+    expires_at: date
+
+
+def _normalize_text(value: str) -> str:
+    normalized = str(value).strip().lower().removeprefix("@")
+    return re.sub(r"\s+", "", normalized)
+
+
+def _parse_sheet_date(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 class SubscriptionSheet:
     def __init__(self):
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
@@ -30,6 +60,9 @@ class SubscriptionSheet:
         self.subscribed_at_col = os.getenv("SHEET_COL_SUBSCRIBED_AT", "訂閱時間").strip()
         self.expires_at_col = os.getenv("SHEET_COL_EXPIRES_AT", "到期日").strip()
         self.error_col = os.getenv("SHEET_COL_ERROR", "開通錯誤訊息").strip()
+        self.reminder_14_col = os.getenv("SHEET_COL_REMINDER_14", "到期前14天提醒").strip()
+        self.reminder_7_col = os.getenv("SHEET_COL_REMINDER_7", "到期前7天提醒").strip()
+        self.reminder_3_col = os.getenv("SHEET_COL_REMINDER_3", "到期前3天提醒").strip()
         self.approved_values = {
             v.strip().lower()
             for v in os.getenv("SHEET_APPROVED_VALUES", "OK,ok,通過,已核對").split(",")
@@ -80,6 +113,9 @@ class SubscriptionSheet:
             self.subscribed_at_col,
             self.expires_at_col,
             self.error_col,
+            self.reminder_14_col,
+            self.reminder_7_col,
+            self.reminder_3_col,
         ]
         changed = False
         for header in required_headers:
@@ -103,16 +139,73 @@ class SubscriptionSheet:
         }
         return SubscriptionRow(row_number=row_number, values=values)
 
-    def pending_rows(self) -> list[SubscriptionRow]:
+    def _records_with_rows(self) -> list[SubscriptionRow]:
         records = self.worksheet.get_all_records(head=1, default_blank="")
+        return [SubscriptionRow(row_number=offset, values=record) for offset, record in enumerate(records, start=2)]
+
+    def pending_rows(self) -> list[SubscriptionRow]:
         rows = []
-        for offset, record in enumerate(records, start=2):
-            review_value = str(record.get(self.review_col, "")).strip().lower()
-            notify_status = str(record.get(self.notify_status_col, "")).strip()
-            subscribed_at = str(record.get(self.subscribed_at_col, "")).strip()
+        for row in self._records_with_rows():
+            review_value = str(row.values.get(self.review_col, "")).strip().lower()
+            notify_status = str(row.values.get(self.notify_status_col, "")).strip()
+            subscribed_at = str(row.values.get(self.subscribed_at_col, "")).strip()
             if review_value in self.approved_values and not subscribed_at and notify_status in ("", "未通知"):
-                rows.append(SubscriptionRow(row_number=offset, values=record))
+                rows.append(row)
         return rows
+
+    def renewal_reminder_rows(self, today: date | None = None) -> list[RenewalReminder]:
+        today = today or date.today()
+        records = self._records_with_rows()
+        latest_expiry_by_user_id: dict[str, date] = {}
+        for row in records:
+            status = str(row.values.get(self.notify_status_col, "")).strip()
+            discord_id = str(row.values.get(self.discord_id_col, "")).strip()
+            expires_at = _parse_sheet_date(row.values.get(self.expires_at_col))
+            if status != "已開通" or not discord_id or expires_at is None:
+                continue
+            latest = latest_expiry_by_user_id.get(discord_id)
+            if latest is None or expires_at > latest:
+                latest_expiry_by_user_id[discord_id] = expires_at
+
+        reminders = []
+        for row in records:
+            status = str(row.values.get(self.notify_status_col, "")).strip()
+            discord_id = str(row.values.get(self.discord_id_col, "")).strip()
+            expires_at = _parse_sheet_date(row.values.get(self.expires_at_col))
+            if status != "已開通" or not discord_id or expires_at is None:
+                continue
+            if expires_at != latest_expiry_by_user_id.get(discord_id):
+                continue
+            days_left = (expires_at - today).days
+            if days_left < 0:
+                continue
+            if days_left <= 3 and not str(row.values.get(self.reminder_3_col, "")).strip():
+                reminders.append(RenewalReminder(row, days_left, self.reminder_3_col, expires_at))
+            elif days_left <= 7 and not str(row.values.get(self.reminder_7_col, "")).strip():
+                reminders.append(RenewalReminder(row, days_left, self.reminder_7_col, expires_at))
+            elif days_left <= 14 and not str(row.values.get(self.reminder_14_col, "")).strip():
+                reminders.append(RenewalReminder(row, days_left, self.reminder_14_col, expires_at))
+        return reminders
+
+    def latest_expiry_for_user(self, discord_user_id: int | str, discord_name: str = "", exclude_row_number: int | None = None) -> date | None:
+        user_id = str(discord_user_id or "").strip()
+        target_name = _normalize_text(discord_name)
+        latest = None
+        for row in self._records_with_rows():
+            if exclude_row_number and row.row_number == exclude_row_number:
+                continue
+            row_user_id = str(row.values.get(self.discord_id_col, "")).strip()
+            row_name = _normalize_text(row.values.get(self.discord_name_col, ""))
+            if user_id and row_user_id == user_id:
+                pass
+            elif target_name and row_name == target_name:
+                pass
+            else:
+                continue
+            expires_at = _parse_sheet_date(row.values.get(self.expires_at_col))
+            if expires_at and (latest is None or expires_at > latest):
+                latest = expires_at
+        return latest
 
     def get_row(self, row_number: int) -> SubscriptionRow:
         return self._get_row(row_number)
@@ -122,17 +215,21 @@ class SubscriptionSheet:
         self.worksheet.update_cell(row_number, self._col_index(self.notify_message_col), str(message_id))
         self.worksheet.update_cell(row_number, self._col_index(self.error_col), "")
 
-    def mark_active(self, row_number: int, discord_user_id: int, subscribed_at: datetime, expires_at: datetime):
+    def mark_active(self, row_number: int, discord_user_id: int, subscribed_at: datetime, expires_at: datetime | date):
+        expires_text = expires_at.strftime("%Y-%m-%d")
         updates = [
             (self.discord_id_col, str(discord_user_id)),
             (self.notify_status_col, "已開通"),
             (self.confirmed_at_col, subscribed_at.strftime("%Y-%m-%d %H:%M:%S")),
             (self.subscribed_at_col, subscribed_at.strftime("%Y-%m-%d %H:%M:%S")),
-            (self.expires_at_col, expires_at.strftime("%Y-%m-%d")),
+            (self.expires_at_col, expires_text),
             (self.error_col, ""),
         ]
         for header, value in updates:
             self.worksheet.update_cell(row_number, self._col_index(header), value)
+
+    def mark_reminder_sent(self, row_number: int, reminder_col: str, sent_at: datetime):
+        self.worksheet.update_cell(row_number, self._col_index(reminder_col), sent_at.strftime("%Y-%m-%d %H:%M:%S"))
 
     def mark_error(self, row_number: int, message: str):
         self.worksheet.update_cell(row_number, self._col_index(self.notify_status_col), "錯誤")

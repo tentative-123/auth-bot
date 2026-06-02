@@ -2,14 +2,14 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 import discord
 from dateutil.relativedelta import relativedelta
 from discord.ext import tasks
 
-from services.subscription_sheet import SubscriptionSheet
+from services.subscription_sheet import RenewalReminder, SubscriptionSheet
 
 logger = logging.getLogger("auth-bot.subscription")
 CONFIRM_PREFIX = "sub_confirm:"
@@ -87,6 +87,15 @@ class SubscriptionManager:
     def _mark_active_sync(self, row_number: int, discord_user_id: int, subscribed_at: datetime, expires_at: datetime):
         self._sheet().mark_active(row_number, discord_user_id, subscribed_at, expires_at)
 
+    def _mark_reminder_sent_sync(self, row_number: int, reminder_col: str, sent_at: datetime):
+        self._sheet().mark_reminder_sent(row_number, reminder_col, sent_at)
+
+    def _renewal_reminder_rows_sync(self):
+        return self._sheet().renewal_reminder_rows(datetime.now(TAIPEI_TZ).date())
+
+    def _latest_expiry_for_user_sync(self, discord_user_id: int, discord_name: str, exclude_row_number: int):
+        return self._sheet().latest_expiry_for_user(discord_user_id, discord_name, exclude_row_number)
+
     def _build_confirm_view(self, row_number: int) -> discord.ui.View:
         view = discord.ui.View(timeout=None)
         button = discord.ui.Button(
@@ -143,6 +152,32 @@ class SubscriptionManager:
             )
         await asyncio.to_thread(self._mark_notified_sync, row_number, message.id)
 
+    async def _send_renewal_reminder(self, reminder: RenewalReminder):
+        discord_id = str(reminder.row.values.get(self._sheet().discord_id_col, "")).strip()
+        if not discord_id:
+            await asyncio.to_thread(self._mark_error_sync, reminder.row.row_number, "缺少 Discord User ID，無法寄送續約提醒")
+            return
+
+        try:
+            user = await self.bot.fetch_user(int(discord_id))
+            await user.send(
+                f"你的訂閱將於 {reminder.expires_at:%Y-%m-%d} 到期（剩 {reminder.days_left} 天）。\n"
+                "若要續約，請填寫同一份表單並完成付款/後台核對；核對完成後我會再傳開通確認按鈕給你。"
+            )
+        except discord.Forbidden:
+            guild = self.bot.get_guild(self.guild_id)
+            channel = self.bot.get_channel(self.channel_id)
+            member = guild.get_member(int(discord_id)) if guild else None
+            mention = member.mention if member else f"<@{discord_id}>"
+            if channel is None:
+                raise RuntimeError("Discord notify channel not found for renewal reminder fallback")
+            await channel.send(
+                f"{mention} 你的訂閱將於 {reminder.expires_at:%Y-%m-%d} 到期（剩 {reminder.days_left} 天）。請留意續約。",
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+            )
+
+        await asyncio.to_thread(self._mark_reminder_sent_sync, reminder.row.row_number, reminder.reminder_col, datetime.now(TAIPEI_TZ))
+
     @tasks.loop(seconds=60)
     async def sync_sheet_loop(self):
         try:
@@ -153,6 +188,10 @@ class SubscriptionManager:
                     await asyncio.to_thread(self._mark_error_sync, row.row_number, "Discord 名稱空白，無法通知")
                     continue
                 await self._send_notification(row.row_number, discord_name)
+
+            reminders = await asyncio.to_thread(self._renewal_reminder_rows_sync)
+            for reminder in reminders:
+                await self._send_renewal_reminder(reminder)
         except Exception:
             logger.exception("[subscription] sheet sync failed")
 
@@ -191,7 +230,17 @@ class SubscriptionManager:
             await member.add_roles(role, reason=f"Subscription confirmed from Google Sheet row {row_number}")
 
             subscribed_at = datetime.now(TAIPEI_TZ)
-            expires_at = subscribed_at + relativedelta(months=3)
+            latest_expiry = await asyncio.to_thread(
+                self._latest_expiry_for_user_sync,
+                interaction.user.id,
+                discord_name,
+                row_number,
+            )
+            if latest_expiry and latest_expiry >= subscribed_at.date():
+                base_expiry = datetime.combine(latest_expiry, time.min, tzinfo=TAIPEI_TZ)
+                expires_at = base_expiry + relativedelta(months=3)
+            else:
+                expires_at = subscribed_at + relativedelta(months=3)
             await asyncio.to_thread(self._mark_active_sync, row_number, interaction.user.id, subscribed_at, expires_at)
             await interaction.followup.send(f"✅ 權限已開通，到期日：{expires_at:%Y-%m-%d}", ephemeral=True)
             return True
