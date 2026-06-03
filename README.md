@@ -156,6 +156,8 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 - `到期前14天提醒`
 - `到期前7天提醒`
 - `到期前3天提醒`
+- `到期處理狀態`
+- `到期移除時間`
 
 ### 9.2 名稱與 ID 的處理方式
 
@@ -214,7 +216,26 @@ Bot 會掃描已開通且有 `Discord User ID` / `到期日` 的列，並在到�
 - 用戶未過期前續約：新到期日會從目前最新的 `到期日` 再加 3 個月。
 - 修改後若不想讓同一階段提醒再次發送，請保留對應的 `到期前14天提醒` / `到期前7天提醒` / `到期前3天提醒` 欄位；若想重新提醒，才清空對應欄位。
 
-### 9.8 必要 Google 設定
+
+### 9.8 到期後自動移除身分組
+
+Bot 會在會員到期後保留 3 天緩衝期，超過緩衝期後才自動移除訂閱身分組。移除完成後會回填：
+
+- `到期處理狀態 = 已移除`
+- `到期移除時間 = 實際移除時間`
+
+如果使用者已經成功續約，Bot 只會以該 Discord ID 最新的一筆有效 `到期日` 判斷，不會因舊訂閱列過期而誤移除身分組。
+
+若要讓特定用戶不被自動移除，可以在 `到期處理狀態` 填入白名單狀態，預設支援：
+
+- `保留`
+- `白名單`
+- `不移除`
+- `手動延長`
+
+白名單值可用 `SHEET_EXPIRY_WHITELIST_VALUES` 自訂；到期後幾天移除可用 `SUBSCRIPTION_EXPIRY_GRACE_DAYS` 調整，預設 `3`。
+
+### 9.9 必要 Google 設定
 
 1. 建立 Google Cloud Project。
 2. 啟用 Google Sheets API。
@@ -222,7 +243,7 @@ Bot 會掃描已開通且有 `Discord User ID` / `到期日` 的列，並在到�
 4. 建立 Service Account JSON key。
 5. 將 Google Sheet 分享給 Service Account email，權限設為編輯者。
 
-### 9.9 環境變數
+### 9.10 環境變數
 
 啟用此功能需要額外設定：
 
@@ -236,6 +257,7 @@ DISCORD_NOTIFY_CHANNEL_ID=要發送確認按鈕的頻道 id
 DISCORD_SUBSCRIBER_ROLE_ID=要開通的身分組 id
 SHEET_CHECK_INTERVAL_SECONDS=60
 SUBSCRIPTION_NOTIFY_MODE=channel
+SUBSCRIPTION_EXPIRY_GRACE_DAYS=3
 ```
 
 如果不想把 JSON 放進環境變數，也可以改用檔案路徑：
@@ -246,7 +268,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/google-service-account.json
 
 > `GOOGLE_WORKSHEET_NAME` 必須填 Google Sheet 底部分頁的「工作表分頁名稱」，不是表單回應表格左上角的表格名稱。若 Railway log 出現 `WorksheetNotFound: Form_Responses`，請到試算表底部分頁確認實際名稱，常見可能是 `表單回應 1`、`Form Responses 1`，或你自行改名後的名稱；也可以把 `GOOGLE_WORKSHEET_NAME` 留空，Bot 會使用第一個工作表分頁。
 
-### 9.10 可調整欄位名稱
+### 9.11 可調整欄位名稱
 
 如果你的 Sheet 欄位名稱不同，可以用環境變數覆蓋：
 
@@ -259,5 +281,8 @@ SHEET_COL_DISCORD_ID=Discord User ID
 SHEET_COL_REMINDER_14=到期前14天提醒
 SHEET_COL_REMINDER_7=到期前7天提醒
 SHEET_COL_REMINDER_3=到期前3天提醒
+SHEET_COL_EXPIRY_STATUS=到期處理狀態
+SHEET_COL_EXPIRY_REMOVED_AT=到期移除時間
+SHEET_EXPIRY_WHITELIST_VALUES=保留,白名單,不移除,手動延長
 SHEET_APPROVED_VALUES=OK,ok,通過,已核對
 ```

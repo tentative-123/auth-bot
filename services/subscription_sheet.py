@@ -26,6 +26,13 @@ class RenewalReminder:
     expires_at: date
 
 
+@dataclass
+class ExpiredSubscription:
+    row: SubscriptionRow
+    days_overdue: int
+    expires_at: date
+
+
 def _normalize_text(value: str) -> str:
     normalized = str(value).strip().lower().removeprefix("@")
     return re.sub(r"\s+", "", normalized)
@@ -63,6 +70,13 @@ class SubscriptionSheet:
         self.reminder_14_col = os.getenv("SHEET_COL_REMINDER_14", "到期前14天提醒").strip()
         self.reminder_7_col = os.getenv("SHEET_COL_REMINDER_7", "到期前7天提醒").strip()
         self.reminder_3_col = os.getenv("SHEET_COL_REMINDER_3", "到期前3天提醒").strip()
+        self.expiry_status_col = os.getenv("SHEET_COL_EXPIRY_STATUS", "到期處理狀態").strip()
+        self.expiry_removed_at_col = os.getenv("SHEET_COL_EXPIRY_REMOVED_AT", "到期移除時間").strip()
+        self.expiry_whitelist_values = {
+            v.strip().lower()
+            for v in os.getenv("SHEET_EXPIRY_WHITELIST_VALUES", "保留,白名單,不移除,手動延長").split(",")
+            if v.strip()
+        }
         self.approved_values = {
             v.strip().lower()
             for v in os.getenv("SHEET_APPROVED_VALUES", "OK,ok,通過,已核對").split(",")
@@ -116,6 +130,8 @@ class SubscriptionSheet:
             self.reminder_14_col,
             self.reminder_7_col,
             self.reminder_3_col,
+            self.expiry_status_col,
+            self.expiry_removed_at_col,
         ]
         changed = False
         for header in required_headers:
@@ -207,6 +223,37 @@ class SubscriptionSheet:
                 latest = expires_at
         return latest
 
+    def expired_subscription_rows(self, today: date | None = None, grace_days: int = 3) -> list[ExpiredSubscription]:
+        today = today or date.today()
+        records = self._records_with_rows()
+        latest_expiry_by_user_id: dict[str, date] = {}
+        for row in records:
+            status = str(row.values.get(self.notify_status_col, "")).strip()
+            discord_id = str(row.values.get(self.discord_id_col, "")).strip()
+            expires_at = _parse_sheet_date(row.values.get(self.expires_at_col))
+            if status != "已開通" or not discord_id or expires_at is None:
+                continue
+            latest = latest_expiry_by_user_id.get(discord_id)
+            if latest is None or expires_at > latest:
+                latest_expiry_by_user_id[discord_id] = expires_at
+
+        expired = []
+        for row in records:
+            status = str(row.values.get(self.notify_status_col, "")).strip()
+            discord_id = str(row.values.get(self.discord_id_col, "")).strip()
+            expires_at = _parse_sheet_date(row.values.get(self.expires_at_col))
+            expiry_status = str(row.values.get(self.expiry_status_col, "")).strip()
+            if status != "已開通" or not discord_id or expires_at is None:
+                continue
+            if expires_at != latest_expiry_by_user_id.get(discord_id):
+                continue
+            if expiry_status == "已移除" or expiry_status.lower() in self.expiry_whitelist_values:
+                continue
+            days_overdue = (today - expires_at).days
+            if days_overdue >= grace_days:
+                expired.append(ExpiredSubscription(row, days_overdue, expires_at))
+        return expired
+
     def get_row(self, row_number: int) -> SubscriptionRow:
         return self._get_row(row_number)
 
@@ -230,6 +277,10 @@ class SubscriptionSheet:
 
     def mark_reminder_sent(self, row_number: int, reminder_col: str, sent_at: datetime):
         self.worksheet.update_cell(row_number, self._col_index(reminder_col), sent_at.strftime("%Y-%m-%d %H:%M:%S"))
+
+    def mark_expired_removed(self, row_number: int, removed_at: datetime):
+        self.worksheet.update_cell(row_number, self._col_index(self.expiry_status_col), "已移除")
+        self.worksheet.update_cell(row_number, self._col_index(self.expiry_removed_at_col), removed_at.strftime("%Y-%m-%d %H:%M:%S"))
 
     def mark_error(self, row_number: int, message: str):
         self.worksheet.update_cell(row_number, self._col_index(self.notify_status_col), "錯誤")

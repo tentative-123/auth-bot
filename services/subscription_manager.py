@@ -9,7 +9,7 @@ import discord
 from dateutil.relativedelta import relativedelta
 from discord.ext import tasks
 
-from services.subscription_sheet import RenewalReminder, SubscriptionSheet
+from services.subscription_sheet import ExpiredSubscription, RenewalReminder, SubscriptionSheet
 
 logger = logging.getLogger("auth-bot.subscription")
 CONFIRM_PREFIX = "sub_confirm:"
@@ -41,6 +41,7 @@ class SubscriptionManager:
         self.check_interval = int(os.getenv("SHEET_CHECK_INTERVAL_SECONDS", "60") or 60)
         self.discord_name_col = os.getenv("SHEET_COL_DISCORD_NAME", "您的 Discord (DC) 帳號名稱").strip()
         self.notify_mode = os.getenv("SUBSCRIPTION_NOTIFY_MODE", "channel").strip().lower()
+        self.expiry_grace_days = int(os.getenv("SUBSCRIPTION_EXPIRY_GRACE_DAYS", "3") or 3)
         self.sheet: SubscriptionSheet | None = None
 
     def start(self):
@@ -95,6 +96,12 @@ class SubscriptionManager:
 
     def _latest_expiry_for_user_sync(self, discord_user_id: int, discord_name: str, exclude_row_number: int):
         return self._sheet().latest_expiry_for_user(discord_user_id, discord_name, exclude_row_number)
+
+    def _expired_subscription_rows_sync(self):
+        return self._sheet().expired_subscription_rows(datetime.now(TAIPEI_TZ).date(), self.expiry_grace_days)
+
+    def _mark_expired_removed_sync(self, row_number: int, removed_at: datetime):
+        self._sheet().mark_expired_removed(row_number, removed_at)
 
     def _build_confirm_view(self, row_number: int) -> discord.ui.View:
         view = discord.ui.View(timeout=None)
@@ -181,6 +188,29 @@ class SubscriptionManager:
 
         await asyncio.to_thread(self._mark_reminder_sent_sync, reminder.row.row_number, reminder.reminder_col, datetime.now(TAIPEI_TZ))
 
+    async def _remove_expired_subscription_role(self, expired: ExpiredSubscription):
+        discord_id = str(expired.row.values.get(self._sheet().discord_id_col, "")).strip()
+        if not discord_id:
+            await asyncio.to_thread(self._mark_error_sync, expired.row.row_number, "缺少 Discord User ID，無法移除到期身分組")
+            return
+
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            raise RuntimeError("Discord guild not found for expiry removal")
+        role = guild.get_role(self.role_id)
+        if role is None:
+            raise RuntimeError("Subscriber role not found for expiry removal")
+        member = guild.get_member(int(discord_id))
+        if member is None:
+            try:
+                member = await guild.fetch_member(int(discord_id))
+            except discord.NotFound:
+                member = None
+
+        if member and role in member.roles:
+            await member.remove_roles(role, reason=f"Subscription expired from Google Sheet row {expired.row.row_number}")
+        await asyncio.to_thread(self._mark_expired_removed_sync, expired.row.row_number, datetime.now(TAIPEI_TZ))
+
     @tasks.loop(seconds=60)
     async def sync_sheet_loop(self):
         try:
@@ -195,6 +225,10 @@ class SubscriptionManager:
             reminders = await asyncio.to_thread(self._renewal_reminder_rows_sync)
             for reminder in reminders:
                 await self._send_renewal_reminder(reminder)
+
+            expired_rows = await asyncio.to_thread(self._expired_subscription_rows_sync)
+            for expired in expired_rows:
+                await self._remove_expired_subscription_role(expired)
         except Exception:
             logger.exception("[subscription] sheet sync failed")
 
