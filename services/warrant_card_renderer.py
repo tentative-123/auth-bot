@@ -82,7 +82,7 @@ def _vol_color(v: float) -> str:
 
 
 def _day_color(days: int) -> str:
-    return "green" if 90 <= days <= 180 else "yellow"
+    return "green" if 70 <= days <= 180 else "yellow"
 
 
 def _otm_color(otm: str) -> str:
@@ -188,7 +188,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
         y += row_h
 
     draw.line((card_x + 12, card_y + card_h - 105, card_x + card_w - 12, card_y + card_h - 105), fill=(188, 211, 221), width=2)
-    foot = ["量≥500", "90-180天", "外≤10%", "槓>5x", "差槓<0.3%"]
+    foot = ["量≥500", "70-180天", "外≤10%", "槓>5x", "差槓<0.3%"]
     x = 40
     for t in foot:
         draw.text((x, card_y + card_h - 78), t, font=f_foot, fill=(35, 35, 35))

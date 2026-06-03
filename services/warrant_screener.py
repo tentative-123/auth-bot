@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
 RISK_FREE_RATE = 0.015
-MIN_DAYS = 90
+MIN_DAYS = 70
 MAX_DAYS = 180
 MAX_OTM_PCT = 0.10
 MIN_OTM_PCT = -0.15
