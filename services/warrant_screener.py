@@ -51,6 +51,10 @@ _CAPITAL_PARAMS = {
 }
 
 
+def _normalize_stock_code(stock_code: str) -> str:
+    return str(stock_code or "").strip().upper().removesuffix(".TW")
+
+
 def _sf(v, default=None):
     try:
         return float(str(v).replace(",", "").replace("%", "").replace("▲", "").replace("▼", "").strip())
@@ -259,7 +263,7 @@ def _parse_capital(text: str) -> list[dict]:
         code = fields.get("1", "").strip()
         name = fields.get("2", "").strip()
         und_code = fields.get("3", "").strip()
-        if not code or not re.match(r"^\d{4,6}$", und_code):
+        if not code or not re.match(r"^\d{4,6}[A-Z]?$", und_code, re.IGNORECASE):
             continue
         sigma_60 = 0.0
         for seg in fields.get("10", "").split(";"):
@@ -331,6 +335,7 @@ def _warrant_score(w: dict, use_volume: bool = True) -> float:
 
 
 def fetch_warrant_results(stock_code: str) -> dict:
+    stock_code = _normalize_stock_code(stock_code)
     intraday = _is_market_hours()
     S, _, S_prev = get_stock_price(stock_code)
     S_calc = (S_prev or S) if intraday else S

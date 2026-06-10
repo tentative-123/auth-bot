@@ -39,7 +39,7 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    content = message.content.strip().lower()
+    content = message.content.strip()
     if not content:
         logger.warning(
             "[discord] empty message content received (check MESSAGE CONTENT INTENT in Discord Developer Portal): guild=%s channel=%s user=%s",
@@ -50,12 +50,12 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    m = re.fullmatch(r"a(\d{4,6})", content)
+    m = re.fullmatch(r"a((?:\d{4,6}|\d{5}[a-z])(?:\.tw)?)", content, re.IGNORECASE)
     if m:
         if not _is_warrant_channel_allowed(message.channel.id):
             logger.info("[warrant-cmd] ignored outside allowed channel: user=%s channel=%s", message.author.id, message.channel.id)
             return
-        stock_code = m.group(1)
+        stock_code = m.group(1).upper().removesuffix(".TW")
         logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
         loading = await message.channel.send("最佳權證查詢中⏳ ~")
         try:
@@ -70,7 +70,7 @@ async def on_message(message: discord.Message):
             warrants = result.get("warrants", [])
             if not warrants:
                 logger.info("[warrant-cmd] no result: stock=%s source=%s", stock_code, result.get("source", "none"))
-                await loading.edit(content=f"找不到 `{stock_code}` 可用權證資料（來源：{result.get('source', 'none')}）。")
+                await loading.edit(content=f"`{stock_code}` 無符合or可用的權證資料。")
                 return
 
             try:
