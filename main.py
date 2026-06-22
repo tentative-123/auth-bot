@@ -2,6 +2,7 @@ import os
 import asyncio
 import re
 import logging
+import time
 import discord
 from discord.ext import commands
 
@@ -21,6 +22,12 @@ intents.members = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 subscription_manager = SubscriptionManager(bot)
 
+WARRANT_CACHE_TTL_SECONDS = int(os.getenv("WARRANT_CACHE_TTL_SECONDS", "3600") or 3600)
+warrant_query_queue: asyncio.Queue[dict] = asyncio.Queue()
+warrant_cache: dict[str, tuple[float, dict]] = {}
+warrant_worker_task: asyncio.Task | None = None
+warrant_query_active = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("auth-bot")
 
@@ -32,6 +39,50 @@ def _warrant_allowed_channel_ids() -> set[int]:
 def _is_warrant_channel_allowed(channel_id: int) -> bool:
     allowed_ids = _warrant_allowed_channel_ids()
     return not allowed_ids or channel_id in allowed_ids
+
+
+def _get_cached_warrant_result(stock_code: str) -> dict | None:
+    cached = warrant_cache.get(stock_code)
+    if not cached:
+        return None
+    cached_at, result = cached
+    if time.monotonic() - cached_at > WARRANT_CACHE_TTL_SECONDS:
+        warrant_cache.pop(stock_code, None)
+        return None
+    return result
+
+
+async def _warrant_query_worker():
+    global warrant_query_active
+    while True:
+        job = await warrant_query_queue.get()
+        warrant_query_active = True
+        stock_code = job["stock_code"]
+        future = job["future"]
+        try:
+            result = _get_cached_warrant_result(stock_code)
+            from_cache = result is not None
+            if from_cache:
+                logger.info("[warrant-cmd] cache hit: stock=%s", stock_code)
+            else:
+                logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
+                result = await asyncio.to_thread(fetch_warrant_results, stock_code)
+                warrant_cache[stock_code] = (time.monotonic(), result)
+            if not future.done():
+                future.set_result((result, from_cache))
+        except Exception as exc:
+            if not future.done():
+                future.set_exception(exc)
+        finally:
+            warrant_query_active = False
+            warrant_query_queue.task_done()
+
+
+def _start_warrant_query_worker():
+    global warrant_worker_task
+    if warrant_worker_task is None or warrant_worker_task.done():
+        warrant_worker_task = asyncio.create_task(_warrant_query_worker())
+        logger.info("[warrant-cmd] queue worker started")
 
 
 @bot.event
@@ -57,15 +108,19 @@ async def on_message(message: discord.Message):
             return
         stock_code = m.group(1).upper().removesuffix(".TW")
         logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
-        loading = await message.channel.send("最佳權證查詢中⏳ ~")
+        queue_position = warrant_query_queue.qsize() + (1 if warrant_query_active else 0) + 1
+        loading = await message.channel.send(f"最佳權證查詢排隊中⏳（目前第 {queue_position} 位）")
         try:
-            logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
-            result = await asyncio.to_thread(fetch_warrant_results, stock_code)
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
+            await warrant_query_queue.put({"stock_code": stock_code, "future": future})
+            result, from_cache = await future
             logger.info(
-                "[warrant-cmd] fetch done: stock=%s source=%s total_found=%s",
+                "[warrant-cmd] fetch done: stock=%s source=%s total_found=%s cache=%s",
                 stock_code,
                 result.get("source"),
                 result.get("total_found"),
+                from_cache,
             )
             warrants = result.get("warrants", [])
             if not warrants:
@@ -76,7 +131,8 @@ async def on_message(message: discord.Message):
             try:
                 image_path = await asyncio.to_thread(render_warrant_card_image, stock_code, result)
                 card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
-                await loading.edit(content="✅ 查詢完成，正在送出圖卡…")
+                done_prefix = "✅ 使用一小時內快取結果" if from_cache else "✅ 查詢完成"
+                await loading.edit(content=f"{done_prefix}，正在送出圖卡…")
                 await message.channel.send(content="📊 最佳權證一頁式圖卡", file=card_file)
                 await loading.edit(content="✅ 圖卡已送出")
                 logger.info("[warrant-cmd] response sent as image: stock=%s count=%d", stock_code, len(warrants[:10]))
@@ -120,6 +176,7 @@ async def on_interaction(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     logger.info("[startup] Bot is ready: %s (id=%s)", bot.user, bot.user.id if bot.user else "unknown")
+    _start_warrant_query_worker()
     subscription_manager.start()
 
 
