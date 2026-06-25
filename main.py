@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 
 from services.subscription_manager import SubscriptionManager
-from services.warrant_screener import fetch_warrant_results
+from services.warrant_screener import fetch_single_warrant_detail, fetch_warrant_results
 from services.warrant_card_renderer import render_warrant_card_image
 
 DISCORD_TOKEN = (
@@ -78,6 +78,48 @@ async def _warrant_query_worker():
             warrant_query_queue.task_done()
 
 
+
+def _fmt_value(value, suffix: str = "") -> str:
+    if value is None or value == "":
+        return "N/A"
+    return f"{value}{suffix}"
+
+
+def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
+    code = detail.get("code", "N/A")
+    name = detail.get("name") or "N/A"
+    sigma = detail.get("sigma")
+    sigma_text = f"{sigma:.1%}" if isinstance(sigma, (int, float)) else "N/A"
+    lev = detail.get("lev")
+    lev_text = f"{lev}x" if lev is not None else "N/A"
+    dj = detail.get("dj_ratio")
+    dj_text = f"{dj:.2f}%" if isinstance(dj, (int, float)) else "N/A"
+    embed = discord.Embed(
+        title=f"{code} / {name}",
+        description="權證單檔參數彙整",
+        color=discord.Color.blue(),
+    )
+    embed.add_field(name="標的代號", value=_fmt_value(detail.get("underlying_code")), inline=True)
+    embed.add_field(
+        name="權證昨收 / 現價",
+        value=f"{_fmt_value(detail.get('price_prev'))} / {_fmt_value(detail.get('price_today'))}",
+        inline=True,
+    )
+    embed.add_field(
+        name="買一 / 賣一",
+        value=f"{_fmt_value(detail.get('bid_px'))} / {_fmt_value(detail.get('ask_px'))}",
+        inline=True,
+    )
+    embed.add_field(name="剩餘天數", value=_fmt_value(detail.get("days"), "天"), inline=True)
+    embed.add_field(name="履約價", value=_fmt_value(detail.get("strike")), inline=True)
+    embed.add_field(name="行使比例", value=_fmt_value(detail.get("exercise_ratio")), inline=True)
+    embed.add_field(name="隱波", value=sigma_text, inline=True)
+    embed.add_field(name="槓桿", value=lev_text, inline=True)
+    embed.add_field(name="差槓比", value=dj_text, inline=True)
+    embed.add_field(name="近日成交量", value=_fmt_value(detail.get("volume")), inline=True)
+    embed.set_footer(text=f"來源：{detail.get('source', 'N/A')}")
+    return embed
+
 def _start_warrant_query_worker():
     global warrant_worker_task
     if warrant_worker_task is None or warrant_worker_task.done():
@@ -108,6 +150,19 @@ async def on_message(message: discord.Message):
             return
         stock_code = m.group(1).upper().removesuffix(".TW")
         logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
+        if re.fullmatch(r"\d{6}", stock_code):
+            loading = await message.channel.send("權證參數查詢中⏳ ~")
+            try:
+                detail = await asyncio.to_thread(fetch_single_warrant_detail, stock_code)
+                if detail.get("source") == "none":
+                    await loading.edit(content=f"`{stock_code}` 無符合or可用的權證資料。")
+                    return
+                await loading.edit(content="✅ 權證參數查詢完成", embed=_build_warrant_detail_embed(detail))
+            except Exception as e:
+                logger.exception("[warrant-detail] failed: warrant=%s", stock_code)
+                await loading.edit(content=f"❌ 權證參數查詢失敗：{e}")
+            return
+
         queue_position = warrant_query_queue.qsize() + (1 if warrant_query_active else 0) + 1
         loading = await message.channel.send(f"最佳權證查詢排隊中⏳（目前第 {queue_position} 位）")
         try:

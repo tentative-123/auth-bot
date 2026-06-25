@@ -125,6 +125,10 @@ def _get_realtime(code: str, market: str = "tse") -> dict | None:
             "bid_sizes": _il(item.get("g", ""))[:5],
             "ask_prices": _pl(item.get("a", ""))[:5],
             "ask_sizes": _il(item.get("f", ""))[:5],
+            "name": item.get("n", ""),
+            "full_name": item.get("nf", ""),
+            "underlying_code": item.get("rch", ""),
+            "underlying_name": item.get("rn", ""),
         }
     except Exception:
         return None
@@ -333,6 +337,104 @@ def _warrant_score(w: dict, use_volume: bool = True) -> float:
         otm_score = 5.0
     return round(vol_score + dj_score + lev_score + otm_score, 2)
 
+
+
+def _merge_warrant_static(primary: dict | None, secondary: dict | None) -> dict | None:
+    if not primary:
+        return secondary
+    if not secondary:
+        return primary
+    merged = {**primary}
+    for key, value in secondary.items():
+        if key not in merged or merged.get(key) in (None, "", 0, 0.0):
+            merged[key] = value
+    if secondary.get("sigma"):
+        merged["sigma"] = secondary["sigma"]
+        merged["sigma_source"] = secondary.get("sigma_source", "Capital")
+    return merged
+
+
+def _find_warrant_static(underlying_code: str, warrant_code: str) -> dict | None:
+    warrant_code = _normalize_stock_code(warrant_code)
+    twse_match = None
+    for w in _fetch_from_twse(underlying_code):
+        if _normalize_stock_code(w.get("code")) == warrant_code:
+            twse_match = {**w, "source": "TWSE"}
+            break
+
+    capital_match = None
+    for w in _fetch_from_capital(underlying_code):
+        if _normalize_stock_code(w.get("code")) == warrant_code:
+            capital_match = {**w, "source": "Capital"}
+            if capital_match.get("sigma"):
+                capital_match["sigma_source"] = "Capital"
+            break
+
+    return _merge_warrant_static(twse_match, capital_match)
+
+
+def fetch_single_warrant_detail(warrant_code: str) -> dict:
+    warrant_code = _normalize_stock_code(warrant_code)
+    intraday = _is_market_hours()
+    rt = _get_warrant_rt(warrant_code) or {}
+    underlying_code = _normalize_stock_code(rt.get("underlying_code", ""))
+    static = _find_warrant_static(underlying_code, warrant_code) if underlying_code else None
+
+    if static and not underlying_code:
+        underlying_code = _normalize_stock_code(static.get("und_code", ""))
+
+    stock_price, _, stock_prev = get_stock_price(underlying_code) if underlying_code else (None, "tse", None)
+    calc_stock_price = (stock_prev or stock_price) if intraday else stock_price
+    hv = _fetch_hv(underlying_code) if underlying_code else 0.35
+
+    name = (static or {}).get("name") or rt.get("name") or ""
+    prev_px = rt.get("prev_close") or 0
+    today_px = rt.get("last_price") or 0
+    bid_prices = rt.get("bid_prices") or []
+    ask_prices = rt.get("ask_prices") or []
+    bid_px = bid_prices[0] if bid_prices else 0
+    ask_px = ask_prices[0] if ask_prices else 0
+    price_today = today_px or (round((bid_px + ask_px) / 2, 2) if bid_px and ask_px else bid_px or ask_px or None)
+    price_for_calc = (prev_px or price_today or 0) if intraday else (today_px or prev_px or price_today or 0)
+
+    days = (static or {}).get("days")
+    strike = (static or {}).get("strike")
+    exercise_ratio = (static or {}).get("exercise_ratio")
+    sigma = (static or {}).get("sigma") or 0
+    sigma_source = (static or {}).get("sigma_source")
+    sigma_for_calc = sigma or hv
+
+    lev = None
+    if days and strike and calc_stock_price and price_for_calc and exercise_ratio:
+        delta = _bs_delta(calc_stock_price, strike, days / 365.0, RISK_FREE_RATE, sigma_for_calc)
+        if delta is not None:
+            lev = abs(delta) * calc_stock_price * exercise_ratio / price_for_calc
+            if lev < 0.5:
+                lev = (calc_stock_price * exercise_ratio) / price_for_calc
+
+    spread_pct = (ask_px - bid_px) / bid_px * 100 if bid_px > 0 and ask_px > bid_px else None
+    dj_ratio = spread_pct / lev if spread_pct is not None and lev and lev > 0 else None
+
+    return {
+        "code": warrant_code,
+        "name": name,
+        "underlying_code": underlying_code or (static or {}).get("und_code") or "",
+        "price_prev": prev_px or None,
+        "price_today": price_today,
+        "bid_px": bid_px or None,
+        "ask_px": ask_px or None,
+        "days": days,
+        "strike": strike,
+        "exercise_ratio": exercise_ratio,
+        "sigma": sigma if sigma_source == "Capital" else None,
+        "sigma_source": sigma_source,
+        "lev": round(lev, 1) if lev is not None else None,
+        "spread_pct": round(spread_pct, 2) if spread_pct is not None else None,
+        "dj_ratio": round(dj_ratio, 3) if dj_ratio is not None else None,
+        "volume": rt.get("volume") or (static or {}).get("volume") or 0,
+        "source": (static or {}).get("source") or ("MIS" if rt else "none"),
+        "intraday": intraday,
+    }
 
 def fetch_warrant_results(stock_code: str) -> dict:
     stock_code = _normalize_stock_code(stock_code)
