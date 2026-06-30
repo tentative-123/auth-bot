@@ -90,6 +90,8 @@ def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
     name = detail.get("name") or "N/A"
     sigma = detail.get("sigma")
     sigma_text = f"{sigma:.1%}" if isinstance(sigma, (int, float)) else "N/A"
+    outstanding_ratio = detail.get("outstanding_ratio")
+    outstanding_text = f"{outstanding_ratio:.2f}%" if isinstance(outstanding_ratio, (int, float)) else "N/A"
     lev = detail.get("lev")
     lev_text = f"{lev}x" if lev is not None else "N/A"
     dj = detail.get("dj_ratio")
@@ -99,24 +101,19 @@ def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
         description="權證單檔參數彙整",
         color=discord.Color.blue(),
     )
-    embed.add_field(name="標的代號", value=_fmt_value(detail.get("underlying_code")), inline=True)
-    embed.add_field(
-        name="權證昨收 / 現價",
-        value=f"{_fmt_value(detail.get('price_prev'))} / {_fmt_value(detail.get('price_today'))}",
-        inline=True,
-    )
-    embed.add_field(
-        name="買一 / 賣一",
-        value=f"{_fmt_value(detail.get('bid_px'))} / {_fmt_value(detail.get('ask_px'))}",
-        inline=True,
-    )
-    embed.add_field(name="剩餘天數", value=_fmt_value(detail.get("days"), "天"), inline=True)
-    embed.add_field(name="履約價", value=_fmt_value(detail.get("strike")), inline=True)
-    embed.add_field(name="行使比例", value=_fmt_value(detail.get("exercise_ratio")), inline=True)
-    embed.add_field(name="隱波", value=sigma_text, inline=True)
-    embed.add_field(name="槓桿", value=lev_text, inline=True)
-    embed.add_field(name="差槓比", value=dj_text, inline=True)
-    embed.add_field(name="近日成交量", value=_fmt_value(detail.get("volume")), inline=True)
+    fields = [
+        ("標的", _fmt_value(detail.get("underlying_code"))),
+        ("昨收 / 現價", f"{_fmt_value(detail.get('price_prev'))} / {_fmt_value(detail.get('price_today'))}"),
+        ("買一 / 賣一", f"{_fmt_value(detail.get('bid_px'))} / {_fmt_value(detail.get('ask_px'))}"),
+        ("剩餘天數", _fmt_value(detail.get("days"), "天")),
+        ("履約價", _fmt_value(detail.get("strike"))),
+        ("行使比例", _fmt_value(detail.get("exercise_ratio"))),
+        ("隱波 / 在外流通", f"{sigma_text} / {outstanding_text}"),
+        ("槓桿 / 差槓比", f"{lev_text} / {dj_text}"),
+        ("近日成交量", _fmt_value(detail.get("volume"))),
+    ]
+    for name, value in fields:
+        embed.add_field(name=name, value=value, inline=True)
     embed.set_footer(text=f"來源：{detail.get('source', 'N/A')}")
     return embed
 

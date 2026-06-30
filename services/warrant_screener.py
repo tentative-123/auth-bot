@@ -279,6 +279,7 @@ def _parse_capital(text: str) -> list[dict]:
             "days": _si(fields.get("22", "0")),
             "exercise_ratio": _sf(fields.get("24", "0")) or 0.1,
             "sigma": sigma_60, "volume": _si(fields.get("15", "0")), "vol_from_api": True,
+            "outstanding_ratio": _sf(fields.get("39", "")),
             "price": 0.0, "bid_px": 0.0, "bid_sz": 0, "ask_px": 0.0, "ask_sz": 0,
         })
     return warrants
@@ -428,6 +429,7 @@ def fetch_single_warrant_detail(warrant_code: str) -> dict:
         "exercise_ratio": exercise_ratio,
         "sigma": sigma if sigma_source == "Capital" else None,
         "sigma_source": sigma_source,
+        "outstanding_ratio": (static or {}).get("outstanding_ratio"),
         "lev": round(lev, 1) if lev is not None else None,
         "spread_pct": round(spread_pct, 2) if spread_pct is not None else None,
         "dj_ratio": round(dj_ratio, 3) if dj_ratio is not None else None,
