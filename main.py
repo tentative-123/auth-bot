@@ -97,15 +97,15 @@ def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
     dj = detail.get("dj_ratio")
     dj_text = f"{dj:.2f}%" if isinstance(dj, (int, float)) else "N/A"
     description = (
-        f"**標的** {_fmt_value(detail.get('underlying_code'))}　"
-        f"**昨/今** {_fmt_value(detail.get('price_prev'))}/{_fmt_value(detail.get('price_today'))}　"
-        f"**買/賣** {_fmt_value(detail.get('bid_px'))}/{_fmt_value(detail.get('ask_px'))}\n"
-        f"**天數** {_fmt_value(detail.get('days'), '天')}　"
-        f"**履約** {_fmt_value(detail.get('strike'))}　"
-        f"**比例** {_fmt_value(detail.get('exercise_ratio'))}\n"
-        f"**隱/外** {sigma_text}/{outstanding_text}　"
-        f"**槓/差** {lev_text}/{dj_text}　"
-        f"**量** {_fmt_value(detail.get('volume'))}"
+        f"**標的代號**：{_fmt_value(detail.get('underlying_code'))}\n"
+        f"**權證昨收 / 現價**：{_fmt_value(detail.get('price_prev'))} / {_fmt_value(detail.get('price_today'))}\n"
+        f"**買一 / 賣一**：{_fmt_value(detail.get('bid_px'))} / {_fmt_value(detail.get('ask_px'))}\n"
+        f"**剩餘天數**：{_fmt_value(detail.get('days'), '天')}　"
+        f"**履約價**：{_fmt_value(detail.get('strike'))}\n"
+        f"**行使比例**：{_fmt_value(detail.get('exercise_ratio'))}　"
+        f"**近日成交量**：{_fmt_value(detail.get('volume'))}\n"
+        f"**隱波 / 在外流通率**：{sigma_text} / {outstanding_text}\n"
+        f"**槓桿 / 差槓比**：{lev_text} / {dj_text}"
     )
     embed = discord.Embed(
         title=f"{code} / {name}",
