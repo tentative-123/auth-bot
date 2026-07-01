@@ -112,7 +112,7 @@ def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
         description=description,
         color=discord.Color.blue(),
     )
-    embed.set_footer(text=f"來源：{detail.get('source', 'N/A')}")
+    embed.set_footer(text="股市艾斯權證小工具")
     return embed
 
 def _start_warrant_query_worker():
