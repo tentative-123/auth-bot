@@ -79,7 +79,7 @@ class SubscriptionSheet:
         }
         self.approved_values = {
             v.strip().lower()
-            for v in os.getenv("SHEET_APPROVED_VALUES", "OK,ok,通過,已核對").split(",")
+            for v in os.getenv("SHEET_APPROVED_VALUES", "OK,ok,ok2,通過,已核對").split(",")
             if v.strip()
         }
 

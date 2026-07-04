@@ -38,6 +38,7 @@ class SubscriptionManager:
         self.guild_id = int(os.getenv("DISCORD_GUILD_ID", "0") or 0)
         self.channel_id = int(os.getenv("DISCORD_NOTIFY_CHANNEL_ID", "0") or 0)
         self.role_id = int(os.getenv("DISCORD_SUBSCRIBER_ROLE_ID", "0") or 0)
+        self.role_id_2 = int(os.getenv("DISCORD_SUBSCRIBER_ROLE_ID_2", "0") or 0)
         self.check_interval = int(os.getenv("SHEET_CHECK_INTERVAL_SECONDS", "60") or 60)
         self.discord_name_col = os.getenv("SHEET_COL_DISCORD_NAME", "您的 Discord (DC) 帳號名稱").strip()
         self.notify_mode = os.getenv("SUBSCRIPTION_NOTIFY_MODE", "channel").strip().lower()
@@ -102,6 +103,10 @@ class SubscriptionManager:
 
     def _mark_expired_removed_sync(self, row_number: int, removed_at: datetime):
         self._sheet().mark_expired_removed(row_number, removed_at)
+
+    def _role_id_for_row(self, row) -> int:
+        review_value = str(row.values.get(self._sheet().review_col, "")).strip().lower()
+        return self.role_id_2 if review_value == "ok2" else self.role_id
 
     def _build_confirm_view(self, row_number: int) -> discord.ui.View:
         view = discord.ui.View(timeout=None)
@@ -197,7 +202,11 @@ class SubscriptionManager:
         guild = self.bot.get_guild(self.guild_id)
         if guild is None:
             raise RuntimeError("Discord guild not found for expiry removal")
-        role = guild.get_role(self.role_id)
+        role_id = self._role_id_for_row(expired.row)
+        if not role_id:
+            await asyncio.to_thread(self._mark_error_sync, expired.row.row_number, "缺少對應的訂閱身分組 ID，無法移除到期身分組")
+            return
+        role = guild.get_role(role_id)
         if role is None:
             raise RuntimeError("Subscriber role not found for expiry removal")
         member = guild.get_member(int(discord_id))
@@ -258,7 +267,10 @@ class SubscriptionManager:
             guild = self.bot.get_guild(self.guild_id)
             if guild is None:
                 raise RuntimeError("Discord guild not found")
-            role = guild.get_role(self.role_id)
+            role_id = self._role_id_for_row(row)
+            if not role_id:
+                raise RuntimeError("Subscriber role ID is missing for this review value")
+            role = guild.get_role(role_id)
             if role is None:
                 raise RuntimeError("Subscriber role not found")
             member = guild.get_member(interaction.user.id)

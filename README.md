@@ -183,6 +183,7 @@ Bot 啟動後會自動補上以下欄位（如果 Sheet 第一列不存在）：
 
 - Bot 需要 `Manage Roles` 權限。
 - Bot 的最高身分組必須高於要發放的訂閱身分組。
+- `後台核對` 填 `ok` 會發放 `DISCORD_SUBSCRIBER_ROLE_ID` 對應的「權證」身分組；填 `ok2` 會發放 `DISCORD_SUBSCRIBER_ROLE_ID_2` 對應的「權證2」身分組。
 - 若希望 Bot 更容易用名稱找到使用者，請在 Discord Developer Portal 開啟 Server Members Intent，並確認 Bot 使用 members intent。
 
 ### 9.4 通知頻道與隱私
@@ -270,7 +271,8 @@ GOOGLE_WORKSHEET_NAME=Form_Responses
 GOOGLE_SERVICE_ACCOUNT_JSON={...整份 service account json...}
 DISCORD_GUILD_ID=你的 Discord server id
 DISCORD_NOTIFY_CHANNEL_ID=要發送確認按鈕的頻道 id
-DISCORD_SUBSCRIBER_ROLE_ID=要開通的身分組 id
+DISCORD_SUBSCRIBER_ROLE_ID=後台核對為 ok 時要開通的「權證」身分組 id
+DISCORD_SUBSCRIBER_ROLE_ID_2=後台核對為 ok2 時要開通的「權證2」身分組 id
 SHEET_CHECK_INTERVAL_SECONDS=60
 SUBSCRIPTION_NOTIFY_MODE=channel
 SUBSCRIPTION_EXPIRY_GRACE_DAYS=3
@@ -300,5 +302,5 @@ SHEET_COL_REMINDER_3=到期前3天提醒
 SHEET_COL_EXPIRY_STATUS=到期處理狀態
 SHEET_COL_EXPIRY_REMOVED_AT=到期移除時間
 SHEET_EXPIRY_WHITELIST_VALUES=保留,白名單,不移除,手動延長
-SHEET_APPROVED_VALUES=OK,ok,通過,已核對
+SHEET_APPROVED_VALUES=OK,ok,ok2,通過,已核對
 ```
