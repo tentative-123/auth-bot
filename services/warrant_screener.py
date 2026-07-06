@@ -55,6 +55,23 @@ def _normalize_stock_code(stock_code: str) -> str:
     return str(stock_code or "").strip().upper().removesuffix(".TW")
 
 
+def _normalize_warrant_type(warrant_type: str = "C") -> str:
+    return "P" if str(warrant_type or "C").strip().upper() == "P" else "C"
+
+
+def _calc_otm(stock_price: float | None, strike: float, warrant_type: str = "C") -> float | None:
+    if not stock_price or stock_price <= 0 or strike <= 0:
+        return None
+    return (stock_price - strike) / stock_price if _normalize_warrant_type(warrant_type) == "P" else (strike - stock_price) / stock_price
+
+
+def _bs_directional_delta(S: float, K: float, T: float, r: float, sigma: float, warrant_type: str = "C") -> float | None:
+    call_delta = _bs_delta(S, K, T, r, sigma)
+    if call_delta is None:
+        return None
+    return call_delta - 1.0 if _normalize_warrant_type(warrant_type) == "P" else call_delta
+
+
 def _sf(v, default=None):
     try:
         return float(str(v).replace(",", "").replace("%", "").replace("▲", "").replace("▼", "").strip())
@@ -188,7 +205,8 @@ _TWSE_WARRANT_HDR = {
 }
 
 
-def _parse_twse_warrant_json(data: dict, stock_code: str) -> list[dict]:
+def _parse_twse_warrant_json(data: dict, stock_code: str, warrant_type: str = "C") -> list[dict]:
+    warrant_type = _normalize_warrant_type(warrant_type)
     fields = [str(f) for f in data.get("fields", [])]
     rows = data.get("data", [])
 
@@ -217,9 +235,10 @@ def _parse_twse_warrant_json(data: dict, stock_code: str) -> list[dict]:
         code = _get(row, i_code, str(row[0])).strip()
         name = _get(row, i_name, str(row[1]) if len(row) > 1 else "")
         type_s = _get(row, i_type, "")
-        if "售" in type_s or "put" in type_s.lower():
+        is_put = "售" in type_s or "put" in type_s.lower() or (not type_s and "售" in name)
+        if warrant_type == "P" and not is_put:
             continue
-        if not type_s and "售" in name:
+        if warrant_type == "C" and is_put:
             continue
         days = _parse_expiry(_get(row, i_expiry))
         strike = _sf(_get(row, i_strike)) or 0
@@ -228,20 +247,21 @@ def _parse_twse_warrant_json(data: dict, stock_code: str) -> list[dict]:
         if not code:
             continue
         warrants.append({"code": code, "name": name, "und_code": und, "strike": strike, "days": days,
-                         "exercise_ratio": ratio, "sigma": 0.0, "volume": 0, "price": 0.0,
+                         "warrant_type": warrant_type, "exercise_ratio": ratio, "sigma": 0.0, "volume": 0, "price": 0.0,
                          "bid_px": 0.0, "bid_sz": 0, "ask_px": 0.0, "ask_sz": 0})
     return warrants
 
 
-def _fetch_from_twse(stock_code: str) -> list[dict]:
-    params = {"response": "json", "stk_no": stock_code, "type": "C"}
+def _fetch_from_twse(stock_code: str, warrant_type: str = "C") -> list[dict]:
+    warrant_type = _normalize_warrant_type(warrant_type)
+    params = {"response": "json", "stk_no": stock_code, "type": warrant_type}
     for url in _TWSE_WARRANT_URLS:
         try:
             resp = requests.get(url, params=params, headers=_TWSE_WARRANT_HDR, timeout=15)
             data = resp.json()
             if data.get("stat") != "OK":
                 continue
-            warrants = _parse_twse_warrant_json(data, stock_code)
+            warrants = _parse_twse_warrant_json(data, stock_code, warrant_type)
             if warrants:
                 return warrants
         except Exception:
@@ -249,7 +269,8 @@ def _fetch_from_twse(stock_code: str) -> list[dict]:
     return []
 
 
-def _parse_capital(text: str) -> list[dict]:
+def _parse_capital(text: str, warrant_type: str = "C") -> list[dict]:
+    warrant_type = _normalize_warrant_type(warrant_type)
     if not (text.startswith("M") and "#" in text):
         return []
     warrants = []
@@ -262,7 +283,7 @@ def _parse_capital(text: str) -> list[dict]:
             if "=" in kv:
                 k, v = kv.split("=", 1)
                 fields[k.strip()] = v.strip()
-        if fields.get("26", "C") != "C":
+        if fields.get("26", "C").upper() != warrant_type:
             continue
         code = fields.get("1", "").strip()
         name = fields.get("2", "").strip()
@@ -277,6 +298,7 @@ def _parse_capital(text: str) -> list[dict]:
             "code": code, "name": name, "und_code": und_code,
             "strike": _sf(fields.get("32", "0")) or 0,
             "days": _si(fields.get("22", "0")),
+            "warrant_type": warrant_type,
             "exercise_ratio": _sf(fields.get("24", "0")) or 0.1,
             "sigma": sigma_60, "volume": _si(fields.get("15", "0")), "vol_from_api": True,
             "outstanding_ratio": _sf(fields.get("39", "")),
@@ -285,7 +307,8 @@ def _parse_capital(text: str) -> list[dict]:
     return warrants
 
 
-def _fetch_from_capital(stock_code: str) -> list[dict]:
+def _fetch_from_capital(stock_code: str, warrant_type: str = "C") -> list[dict]:
+    warrant_type = _normalize_warrant_type(warrant_type)
     try:
         sess = requests.Session()
         sess.get("https://extweb.capital.com.tw/Extproduct/Program/Warrant/IndexWarrant/WarrantSearch.html", headers=_BASE_HDR, timeout=12)
@@ -295,11 +318,11 @@ def _fetch_from_capital(stock_code: str) -> list[dict]:
     best: list[dict] = []
     for flag1 in ("0", "9100"):
         try:
-            params = {**_CAPITAL_PARAMS, "flag1": flag1, "flag2_value": stock_code}
+            params = {**_CAPITAL_PARAMS, "flag1": flag1, "flag2_value": stock_code, "flag3": warrant_type}
             resp = sess.get("https://srvsolgw.capital.com.tw/info/warrant.aspx", params=params, headers=_CAPITAL_HDR, timeout=20)
             text = resp.text.strip()
             if resp.status_code == 200 and text.startswith("M") and "#" in text:
-                result = _parse_capital(text)
+                result = _parse_capital(text, warrant_type)
                 if len(result) > len(best):
                     best = result
         except Exception:
@@ -355,16 +378,17 @@ def _merge_warrant_static(primary: dict | None, secondary: dict | None) -> dict 
     return merged
 
 
-def _find_warrant_static(underlying_code: str, warrant_code: str) -> dict | None:
+def _find_warrant_static(underlying_code: str, warrant_code: str, warrant_type: str = "C") -> dict | None:
     warrant_code = _normalize_stock_code(warrant_code)
+    warrant_type = _normalize_warrant_type(warrant_type)
     twse_match = None
-    for w in _fetch_from_twse(underlying_code):
+    for w in _fetch_from_twse(underlying_code, warrant_type):
         if _normalize_stock_code(w.get("code")) == warrant_code:
             twse_match = {**w, "source": "TWSE"}
             break
 
     capital_match = None
-    for w in _fetch_from_capital(underlying_code):
+    for w in _fetch_from_capital(underlying_code, warrant_type):
         if _normalize_stock_code(w.get("code")) == warrant_code:
             capital_match = {**w, "source": "Capital"}
             if capital_match.get("sigma"):
@@ -374,12 +398,13 @@ def _find_warrant_static(underlying_code: str, warrant_code: str) -> dict | None
     return _merge_warrant_static(twse_match, capital_match)
 
 
-def fetch_single_warrant_detail(warrant_code: str) -> dict:
+def fetch_single_warrant_detail(warrant_code: str, warrant_type: str = "C") -> dict:
     warrant_code = _normalize_stock_code(warrant_code)
+    warrant_type = _normalize_warrant_type(warrant_type)
     intraday = _is_market_hours()
     rt = _get_warrant_rt(warrant_code) or {}
     underlying_code = _normalize_stock_code(rt.get("underlying_code", ""))
-    static = _find_warrant_static(underlying_code, warrant_code) if underlying_code else None
+    static = _find_warrant_static(underlying_code, warrant_code, warrant_type) if underlying_code else None
 
     if static and not underlying_code:
         underlying_code = _normalize_stock_code(static.get("und_code", ""))
@@ -407,7 +432,7 @@ def fetch_single_warrant_detail(warrant_code: str) -> dict:
 
     lev = None
     if days and strike and calc_stock_price and price_for_calc and exercise_ratio:
-        delta = _bs_delta(calc_stock_price, strike, days / 365.0, RISK_FREE_RATE, sigma_for_calc)
+        delta = _bs_directional_delta(calc_stock_price, strike, days / 365.0, RISK_FREE_RATE, sigma_for_calc, warrant_type)
         if delta is not None:
             lev = abs(delta) * calc_stock_price * exercise_ratio / price_for_calc
             if lev < 0.5:
@@ -419,6 +444,7 @@ def fetch_single_warrant_detail(warrant_code: str) -> dict:
     return {
         "code": warrant_code,
         "name": name,
+        "warrant_type": warrant_type,
         "underlying_code": underlying_code or (static or {}).get("und_code") or "",
         "price_prev": prev_px or None,
         "price_today": price_today,
@@ -438,21 +464,22 @@ def fetch_single_warrant_detail(warrant_code: str) -> dict:
         "intraday": intraday,
     }
 
-def fetch_warrant_results(stock_code: str) -> dict:
+def fetch_warrant_results(stock_code: str, warrant_type: str = "C") -> dict:
     stock_code = _normalize_stock_code(stock_code)
+    warrant_type = _normalize_warrant_type(warrant_type)
     intraday = _is_market_hours()
     S, _, S_prev = get_stock_price(stock_code)
     S_calc = (S_prev or S) if intraday else S
     hv = _fetch_hv(stock_code)
 
-    warrants = _fetch_from_twse(stock_code)
+    warrants = _fetch_from_twse(stock_code, warrant_type)
     source = "TWSE" if warrants else "none"
     if not warrants:
-        warrants = _fetch_from_capital(stock_code)
+        warrants = _fetch_from_capital(stock_code, warrant_type)
         source = "Capital" if warrants else "none"
 
     if not warrants:
-        return {"stock_price": S, "warrants": [], "total_found": 0, "source": source, "hv": hv, "intraday": intraday}
+        return {"stock_price": S, "warrants": [], "total_found": 0, "source": source, "hv": hv, "intraday": intraday, "warrant_type": warrant_type}
 
     candidates = []
     for w in warrants:
@@ -460,8 +487,8 @@ def fetch_warrant_results(stock_code: str) -> dict:
         if not (MIN_DAYS <= days <= MAX_DAYS):
             continue
         otm = w.get("otm")
-        if otm is None and S_calc and S_calc > 0 and w["strike"] > 0:
-            otm = (w["strike"] - S_calc) / S_calc
+        if otm is None:
+            otm = _calc_otm(S_calc, w["strike"], warrant_type)
         if otm is not None and (otm > MAX_OTM_PCT or otm < MIN_OTM_PCT):
             continue
         w["otm"] = otm
@@ -518,14 +545,14 @@ def fetch_warrant_results(stock_code: str) -> dict:
         T = w["days"] / 365.0
         wp = w.get("price", 0) or 0
         sigma = w.get("sigma") or hv
-        delta = _bs_delta(S_calc, w["strike"], T, RISK_FREE_RATE, sigma) if S_calc and w["strike"] > 0 else None
+        delta = _bs_directional_delta(S_calc, w["strike"], T, RISK_FREE_RATE, sigma, warrant_type) if S_calc and w["strike"] > 0 else None
         lev = None
         ex_rt = w.get("exercise_ratio", 0.1)
         if delta is not None and S_calc and wp > 0 and ex_rt > 0:
             lev = abs(delta) * S_calc * ex_rt / wp
             if lev < 0.5:
                 lev = (S_calc * ex_rt) / wp
-        otm = (w["strike"] - S_calc) / S_calc if S_calc and w["strike"] else w.get("otm")
+        otm = _calc_otm(S_calc, w["strike"], warrant_type) if S_calc and w["strike"] else w.get("otm")
         w["otm"] = otm
         w["otm_str"] = f"{'外' if otm > 0 else '內'}{abs(otm):.1%}" if otm is not None else "N/A"
         w["delta"] = round(abs(delta), 2) if delta is not None else None
@@ -540,4 +567,4 @@ def fetch_warrant_results(stock_code: str) -> dict:
 
     scored = sorted(liquid_candidates, key=lambda x: x.get("_score", 0), reverse=True)
     top = scored[:TOP_N]
-    return {"stock_price": S, "warrants": top, "total_found": len(candidates), "source": source, "hv": hv, "intraday": intraday}
+    return {"stock_price": S, "warrants": top, "total_found": len(candidates), "source": source, "hv": hv, "intraday": intraday, "warrant_type": warrant_type}

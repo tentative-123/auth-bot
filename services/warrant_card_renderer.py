@@ -114,6 +114,8 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     source = result.get("source", "N/A")
     total_found = result.get("total_found", 0)
     intraday = bool(result.get("intraday", False))
+    warrant_type = str(result.get("warrant_type", "C")).upper()
+    title_text = "認售權證篩選" if warrant_type == "P" else "認購權證篩選"
 
     W, H = 1600, 2320
     img = Image.new("RGB", (W, H), (219, 230, 235))
@@ -137,7 +139,7 @@ def render_warrant_card_image(stock_code: str, result: dict) -> str:
     draw.rectangle((card_x + 1, card_y + 1, card_x + card_w - 1, header_bottom), fill=(211, 236, 246))
     draw.rectangle((card_x + 1, header_bottom, card_x + card_w - 1, card_y + card_h - 1), fill=(255, 255, 255))
 
-    draw.text((46, 38), "認購權證篩選", font=f_title, fill=(13, 77, 123))
+    draw.text((46, 38), title_text, font=f_title, fill=(13, 77, 123))
     px = "N/A" if stock_price is None else f"{float(stock_price):.2f}"
     draw.text((46, 142), f"{stock_code}  現價 {px}", font=f_meta, fill=(59, 120, 165))
     draw.text((46, 232), f"依照各參數比重評分排序，符合條件共{total_found}筆", font=f_sub, fill=(35, 35, 35))

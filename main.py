@@ -58,16 +58,18 @@ async def _warrant_query_worker():
         job = await warrant_query_queue.get()
         warrant_query_active = True
         stock_code = job["stock_code"]
+        warrant_type = job.get("warrant_type", "C")
+        cache_key = f"{warrant_type}:{stock_code}"
         future = job["future"]
         try:
-            result = _get_cached_warrant_result(stock_code)
+            result = _get_cached_warrant_result(cache_key)
             from_cache = result is not None
             if from_cache:
-                logger.info("[warrant-cmd] cache hit: stock=%s", stock_code)
+                logger.info("[warrant-cmd] cache hit: type=%s stock=%s", warrant_type, stock_code)
             else:
-                logger.info("[warrant-cmd] start fetching: stock=%s", stock_code)
-                result = await asyncio.to_thread(fetch_warrant_results, stock_code)
-                warrant_cache[stock_code] = (time.monotonic(), result)
+                logger.info("[warrant-cmd] start fetching: type=%s stock=%s", warrant_type, stock_code)
+                result = await asyncio.to_thread(fetch_warrant_results, stock_code, warrant_type)
+                warrant_cache[cache_key] = (time.monotonic(), result)
             if not future.done():
                 future.set_result((result, from_cache))
         except Exception as exc:
@@ -107,9 +109,10 @@ def _build_warrant_detail_embed(detail: dict) -> discord.Embed:
         f"**隱波 / 在外流通率**：{sigma_text} / {outstanding_text}\n"
         f"**槓桿 / 差槓比**：{lev_text} / {dj_text}"
     )
+    type_label = "認售" if detail.get("warrant_type") == "P" else "認購"
     embed = discord.Embed(
         title=f"{code} / {name}",
-        description=description,
+        description=f"{type_label}權證單檔參數\n" + description,
         color=discord.Color.blue(),
     )
     embed.set_footer(text="股市艾斯權證小工具")
@@ -138,21 +141,24 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    m = re.fullmatch(r"a((?:\d{4,6}|\d{5}[a-z])(?:\.tw)?)", content, re.IGNORECASE)
+    m = re.fullmatch(r"([ab])((?:\d{4,6}|\d{5}[a-z])(?:\.tw)?)", content, re.IGNORECASE)
     if m:
         if not _is_warrant_channel_allowed(message.channel.id):
             logger.info("[warrant-cmd] ignored outside allowed channel: user=%s channel=%s", message.author.id, message.channel.id)
             return
-        stock_code = m.group(1).upper().removesuffix(".TW")
-        logger.info("[warrant-cmd] trigger received: user=%s stock=%s channel=%s", message.author.id, stock_code, message.channel.id)
+        command_prefix = m.group(1).lower()
+        warrant_type = "P" if command_prefix == "b" else "C"
+        type_label = "認售" if warrant_type == "P" else "認購"
+        stock_code = m.group(2).upper().removesuffix(".TW")
+        logger.info("[warrant-cmd] trigger received: user=%s type=%s stock=%s channel=%s", message.author.id, warrant_type, stock_code, message.channel.id)
         if re.fullmatch(r"\d{6}", stock_code):
-            loading = await message.channel.send("權證參數查詢中⏳ ~")
+            loading = await message.channel.send(f"{type_label}權證參數查詢中⏳ ~")
             try:
-                detail = await asyncio.to_thread(fetch_single_warrant_detail, stock_code)
+                detail = await asyncio.to_thread(fetch_single_warrant_detail, stock_code, warrant_type)
                 if detail.get("source") == "none":
                     await loading.edit(content=f"`{stock_code}` 無符合or可用的權證資料。")
                     return
-                await loading.edit(content="✅ 權證參數查詢完成", embed=_build_warrant_detail_embed(detail))
+                await loading.edit(content=f"✅ {type_label}權證參數查詢完成", embed=_build_warrant_detail_embed(detail))
             except Exception as e:
                 logger.exception("[warrant-detail] failed: warrant=%s", stock_code)
                 await loading.edit(content=f"❌ 權證參數查詢失敗：{e}")
@@ -163,10 +169,11 @@ async def on_message(message: discord.Message):
         try:
             loop = asyncio.get_running_loop()
             future = loop.create_future()
-            await warrant_query_queue.put({"stock_code": stock_code, "future": future})
+            await warrant_query_queue.put({"stock_code": stock_code, "warrant_type": warrant_type, "future": future})
             result, from_cache = await future
             logger.info(
-                "[warrant-cmd] fetch done: stock=%s source=%s total_found=%s cache=%s",
+                "[warrant-cmd] fetch done: type=%s stock=%s source=%s total_found=%s cache=%s",
+                warrant_type,
                 stock_code,
                 result.get("source"),
                 result.get("total_found"),
@@ -180,7 +187,7 @@ async def on_message(message: discord.Message):
 
             try:
                 image_path = await asyncio.to_thread(render_warrant_card_image, stock_code, result)
-                card_file = discord.File(image_path, filename=f"warrant_{stock_code}.png")
+                card_file = discord.File(image_path, filename=f"warrant_{warrant_type.lower()}_{stock_code}.png")
                 done_prefix = "✅ 使用一小時內快取結果" if from_cache else "✅ 查詢完成"
                 await loading.edit(content=f"{done_prefix}，正在送出圖卡…")
                 await message.channel.send(content="📊 最佳權證一頁式圖卡", file=card_file)
@@ -189,7 +196,7 @@ async def on_message(message: discord.Message):
             except Exception as render_err:
                 logger.exception("[warrant-cmd] image render failed, fallback to embed: stock=%s", stock_code)
                 embed = discord.Embed(
-                    title=f"{stock_code} 認購權證清單",
+                    title=f"{stock_code} {type_label}權證清單",
                     description=(
                         f"來源：{result.get('source', 'N/A')}｜"
                         f"母股價：{result.get('stock_price') or 'N/A'}｜"
