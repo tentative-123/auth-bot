@@ -151,7 +151,11 @@ async def on_message(message: discord.Message):
         type_label = "認售" if warrant_type == "P" else "認購"
         stock_code = m.group(2).upper().removesuffix(".TW")
         logger.info("[warrant-cmd] trigger received: user=%s type=%s stock=%s channel=%s", message.author.id, warrant_type, stock_code, message.channel.id)
-        is_single_warrant_code = bool(re.fullmatch(r"\d{6}", stock_code) or (warrant_type == "P" and re.fullmatch(r"\d{5}[A-Z]", stock_code)))
+        is_leveraged_etf_code = bool(re.fullmatch(r"\d{5}[LR]", stock_code))
+        is_single_warrant_code = bool(
+            re.fullmatch(r"\d{6}", stock_code)
+            or (warrant_type == "P" and re.fullmatch(r"\d{5}[A-Z]", stock_code) and not is_leveraged_etf_code)
+        )
         if is_single_warrant_code:
             loading = await message.channel.send(f"{type_label}權證參數查詢中⏳ ~")
             try:
