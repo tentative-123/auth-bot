@@ -44,6 +44,7 @@ class SubscriptionManager:
         self.notify_mode = os.getenv("SUBSCRIPTION_NOTIFY_MODE", "channel").strip().lower()
         self.expiry_grace_days = int(os.getenv("SUBSCRIPTION_EXPIRY_GRACE_DAYS", "3") or 3)
         self.sheet: SubscriptionSheet | None = None
+        self.confirmation_locks: dict[int, asyncio.Lock] = {}
 
     def start(self):
         if not self.enabled:
@@ -252,6 +253,11 @@ class SubscriptionManager:
         row_number = int(custom_id.removeprefix(CONFIRM_PREFIX))
         await interaction.response.defer(ephemeral=True)
 
+        confirmation_lock = self.confirmation_locks.setdefault(row_number, asyncio.Lock())
+        async with confirmation_lock:
+            return await self._confirm_subscription(interaction, row_number)
+
+    async def _confirm_subscription(self, interaction: discord.Interaction, row_number: int) -> bool:
         try:
             row = await asyncio.to_thread(self._get_row_sync, row_number)
             existing_discord_id = str(row.values.get(self._sheet().discord_id_col, "")).strip()
@@ -262,6 +268,16 @@ class SubscriptionManager:
             discord_name = str(row.values.get(self.discord_name_col, "")).strip()
             if not existing_discord_id and not self._user_matches_sheet_name(interaction.user, discord_name):
                 await interaction.followup.send("❌ 你的 Discord 名稱與表單填寫資料不一致，請聯絡管理員協助確認。", ephemeral=True)
+                return True
+
+            notify_status = str(row.values.get(self._sheet().notify_status_col, "")).strip()
+            subscribed_at_value = str(row.values.get(self._sheet().subscribed_at_col, "")).strip()
+            if notify_status == "已開通" or subscribed_at_value:
+                expires_at_value = str(row.values.get(self._sheet().expires_at_col, "")).strip() or "N/A"
+                await interaction.followup.send(
+                    f"✅ 這個確認按鈕已經使用過，不會重複延長訂閱。目前到期日：{expires_at_value}",
+                    ephemeral=True,
+                )
                 return True
 
             guild = self.bot.get_guild(self.guild_id)
@@ -291,6 +307,11 @@ class SubscriptionManager:
             else:
                 expires_at = subscribed_at + relativedelta(months=3)
             await asyncio.to_thread(self._mark_active_sync, row_number, interaction.user.id, subscribed_at, expires_at)
+            if interaction.message:
+                try:
+                    await interaction.message.edit(view=None)
+                except discord.HTTPException:
+                    logger.warning("[subscription] unable to remove used confirmation button: row=%s", row_number)
             await interaction.followup.send(f"✅ 權限已開通，到期日：{expires_at:%Y-%m-%d}", ephemeral=True)
             return True
         except Exception as exc:
