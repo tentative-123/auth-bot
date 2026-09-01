@@ -86,6 +86,18 @@ def _si(v, default=0):
         return default
 
 
+def _decode_capital_content(content: bytes) -> str:
+    """Decode Capital's legacy ASP response without trusting its HTTP charset."""
+    if content.startswith(b"\xef\xbb\xbf"):
+        return content.decode("utf-8-sig")
+    for encoding in ("cp950", "big5", "utf-8"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("cp950", errors="replace")
+
+
 def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
@@ -320,7 +332,7 @@ def _fetch_from_capital(stock_code: str, warrant_type: str = "C") -> list[dict]:
         try:
             params = {**_CAPITAL_PARAMS, "flag1": flag1, "flag2_value": stock_code, "flag3": warrant_type}
             resp = sess.get("https://srvsolgw.capital.com.tw/info/warrant.aspx", params=params, headers=_CAPITAL_HDR, timeout=20)
-            text = resp.text.strip()
+            text = _decode_capital_content(resp.content).strip()
             if resp.status_code == 200 and text.startswith("M") and "#" in text:
                 result = _parse_capital(text, warrant_type)
                 if len(result) > len(best):
@@ -500,6 +512,9 @@ def fetch_warrant_results(stock_code: str, warrant_type: str = "C") -> dict:
     for w in candidates[:n_fetch]:
         rt = _get_warrant_rt(w["code"])
         if rt:
+            realtime_name = str(rt.get("name") or "").strip()
+            if realtime_name:
+                w["name"] = realtime_name
             if rt.get("volume"):
                 w["volume"] = rt["volume"]
             today_px = rt.get("last_price") or 0

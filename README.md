@@ -78,7 +78,7 @@ b03206T
 
 ### 3.4 權證資料來源
 
-`services/warrant_screener.py` 會優先嘗試 TWSE 權證資料來源；若無資料，會 fallback 到 Capital 來源。
+`services/warrant_screener.py` 會優先嘗試 TWSE 權證資料來源；若無資料，會 fallback 到 Capital 來源。Capital 的舊式回應會優先以台灣舊站使用的 CP950 / Big5 解碼，並支援 UTF-8；候選權證名稱也會再以 MIS 即時資料校正，避免部分個股名稱出現亂碼。
 
 ### 3.5 共同篩選條件
 
