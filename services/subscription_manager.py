@@ -174,12 +174,14 @@ class SubscriptionManager:
             await asyncio.to_thread(self._mark_error_sync, reminder.row.row_number, "缺少 Discord User ID，無法寄送續約提醒")
             return
 
+        reminder_text = (
+            "【股市艾斯權證系統｜續約提醒】\n"
+            f"你的訂閱將於 {reminder.expires_at:%Y-%m-%d} 到期（剩 {reminder.days_left} 天）。\n"
+            "若要續約，請填寫同一份表單並完成付款/後台核對；核對完成後我會再傳開通確認按鈕給你。"
+        )
         try:
             user = await self.bot.fetch_user(int(discord_id))
-            await user.send(
-                f"你的訂閱將於 {reminder.expires_at:%Y-%m-%d} 到期（剩 {reminder.days_left} 天）。\n"
-                "若要續約，請填寫同一份表單並完成付款/後台核對；核對完成後我會再傳開通確認按鈕給你。"
-            )
+            await user.send(reminder_text)
         except discord.Forbidden:
             guild = self.bot.get_guild(self.guild_id)
             channel = self.bot.get_channel(self.channel_id)
@@ -188,7 +190,7 @@ class SubscriptionManager:
             if channel is None:
                 raise RuntimeError("Discord notify channel not found for renewal reminder fallback")
             await channel.send(
-                f"{mention} 你的訂閱將於 {reminder.expires_at:%Y-%m-%d} 到期（剩 {reminder.days_left} 天）。請留意續約。",
+                f"{mention} {reminder_text}",
                 allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
             )
 
