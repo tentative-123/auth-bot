@@ -1,11 +1,6 @@
 discord.py
-openai
-python-dotenv
-yfinance
-pandas
-matplotlib
-numpy
-
 requests
-selenium
 Pillow
+gspread
+google-auth
+python-dateutil
